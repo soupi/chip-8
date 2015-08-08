@@ -12,6 +12,7 @@ import qualified Data.Vector.Unboxed as V
 import Lens.Micro ((&))
 import qualified Lens.Micro     as Lens
 import qualified Lens.Micro.Mtl as Lens
+import qualified Data.ByteString as BS
 
 import Utils
 import CPU.CPU (CPU)
@@ -22,8 +23,14 @@ import qualified CPU.Bits as Bits
 -- Emulation
 ---------------
 
-loadGame :: String -> CPU
-loadGame = undefined
+loadGame :: BS.ByteString -> Emulate CPU
+loadGame game =
+  if BS.length game <= V.length (Lens.view CPU.memory cpu) - 0x0200
+  then
+    pure $ Lens.over CPU.memory (`V.update` V.fromList (zip [0x200..] (BS.unpack game))) cpu
+  else
+    throwErr "Cannot fit game in memory"
+  where cpu = CPU.initCPU
 
 type Emulate a = Either Error a
 
