@@ -51,3 +51,9 @@ getPC = fromIntegral . Lens.view pc
 -- Returns the stack pointer as Int
 getSP :: CPU -> Int
 getSP = fromIntegral . Lens.view sp
+
+-- |
+-- Returns the content of the register
+regVal :: W.Word8 -> CPU -> W.Word8
+regVal regNum cpu =
+  Lens.view registers cpu V.! fromIntegral regNum

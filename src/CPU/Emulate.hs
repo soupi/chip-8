@@ -9,7 +9,7 @@ module CPU.Emulate where
 import Control.Monad ((>=>), (<=<))
 import qualified Data.Word as W (Word8, Word16)
 import qualified Data.Vector.Unboxed as V
-import Data.Bits ((.&.))
+import Data.Bits ((.&.), (.|.), xor, shiftR)
 import Lens.Micro ((&))
 import qualified Lens.Micro     as Lens
 import qualified Lens.Micro.Mtl as Lens
@@ -109,14 +109,34 @@ popFromStack cpu =
 findOpcode :: W.Word16 -> Maybe Instruction
 findOpcode opcode =
   case Bits.match16 opcode of
-    (0x0, 0x0, 0xE, 0x0) ->
-      pure (nextPC <=< clearScreen)
-    (0x2, _, _, _) ->
-      pure $ callSubroutine (opcode .&. 0x0FFF)
     (0x1, _, _, _) ->
       pure $ jump (opcode .&. 0x0FFF)
+    (0x2, _, _, _) ->
+      pure $ callSubroutine (opcode .&. 0x0FFF)
+    (0x0, 0x0, 0xE, 0x0) ->
+      pure (nextPC <=< clearScreen)
+    (0x6, v, _, _) ->
+      pure $ setRegister v $ fromIntegral (opcode .&. 0x00FF)
+    (0x7, v, _, _) ->
+      pure $ addToRegister v $ fromIntegral (opcode .&. 0x00FF)
+    (0x8, x, y, 0) ->
+      pure $ movRegister x y
+    (0x8, x, y, 1) ->
+      pure $ orRegisters x y
+    (0x8, x, y, 2) ->
+      pure $ andRegisters x y
+    (0x8, x, y, 3) ->
+      pure $ xorRegisters x y
     (0x8, x, y, 4) ->
       pure $ addRegisters x y
+    (0x8, x, y, 5) ->
+      pure $ subRegisters x y
+    (0x8, x, _, 6) ->
+      pure $ shiftRegisterR x
+    (0xA, _, _, _) ->
+      pure $ setIndex (opcode .&. 0x0FFF)
+    (0xB, _, _, _) ->
+      pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xF, x, 3, 3) ->
       pure $ storeBinRep x
 
@@ -145,15 +165,12 @@ callSubroutine address =
   supplyBoth storeOnStack (Lens.view CPU.pc) >=> jump address
 
 -- |
--- Opcode 0x8xy4
--- Adds the registers x and y. sets carry in register F
--- changes the registers x, y and F
-addRegisters :: W.Word8 -> W.Word8 -> Instruction
-addRegisters x y cpu =
-  pure $ Lens.over CPU.registers (V.// [(fromIntegral x, vx + vy), (0xF, carry)]) cpu
-  where vx = Lens.view CPU.registers cpu V.! fromIntegral x
-        vy = Lens.view CPU.registers cpu V.! fromIntegral y
-        carry = if (0xFF :: W.Word16) < fromIntegral vx + fromIntegral vy then 1 else 0
+-- Opcode 0xBnnn
+-- Jump to address 0x0nnn + content of index register
+-- changes the program counter
+jumpPlusIndex :: W.Word16 -> Instruction
+jumpPlusIndex address cpu =
+  jump (address + Lens.view CPU.index cpu) cpu
 
 -- |
 -- Opcode 0xFx33
@@ -167,5 +184,103 @@ storeBinRep x cpu =
     (i1,i2,i3) = (\i -> (fromIntegral i, fromIntegral i+1, fromIntegral i+2)) (Lens.view CPU.index cpu)
  in
     pure $ Lens.over CPU.memory (V.// [(i1, n1), (i2, n2), (i3, n3)]) cpu
+
+
+-- |
+-- Opcode 0xAnnn
+-- Sets the index register to the immediate value nnn
+-- changes the index register
+setIndex :: W.Word16 -> Instruction
+setIndex address =
+  pure . Lens.set CPU.index address
+
+-- |
+-- Opcode 0x6vnn
+-- Sets the register v to the immediate value nn
+-- changes the register v
+setRegister :: W.Word8 -> W.Word8 -> Instruction
+setRegister regNum value =
+  pure . Lens.over CPU.registers (V.// [(fromIntegral regNum, value)])
+
+-- |
+-- Opcode 0x7vnn
+-- Add the immediate value nn to the register v
+-- changes the register v
+addToRegister :: W.Word8 -> W.Word8 -> Instruction
+addToRegister regNum value cpu =
+  setRegister regNum (value + vx) cpu
+  where vx = (CPU.regVal regNum cpu)
+
+
+-- |
+-- Opcode 0x8xy0
+-- Sets the register x to the content of register y
+-- changes the register x
+movRegister :: W.Word8 -> W.Word8 -> Instruction
+movRegister = binOpRegisters (flip const)
+
+-- |
+-- Opcode 0x8xy1
+-- Sets the register x to (x | y)
+-- changes the register x
+orRegisters :: W.Word8 -> W.Word8 -> Instruction
+orRegisters = binOpRegisters (.|.)
+
+
+-- |
+-- Opcode 0x8xy2
+-- Sets the register x to (x & y)
+-- changes the register x
+andRegisters :: W.Word8 -> W.Word8 -> Instruction
+andRegisters = binOpRegisters (.&.)
+
+-- |
+-- Opcode 0x8xy3
+-- Sets the register x to (x `xor` y)
+-- changes the register x
+xorRegisters :: W.Word8 -> W.Word8 -> Instruction
+xorRegisters = binOpRegisters xor
+
+
+-- |
+-- Opcode 0x8xy4
+-- Adds the registers x and y and stores them at register x. sets carry in register F
+-- changes the registers x and F
+addRegisters :: W.Word8 -> W.Word8 -> Instruction
+addRegisters x y cpu =
+  pure $ Lens.over CPU.registers (V.// [(fromIntegral x, vx + vy), (0xF, carry)]) cpu
+  where vx = CPU.regVal x cpu
+        vy = CPU.regVal y cpu
+        carry = if (0xFF :: W.Word16) < fromIntegral vx + fromIntegral vy then 1 else 0
+
+-- |
+-- Opcode 0x8xy5
+-- Subtract the registers y from x and store in x. sets borrow in register F
+-- changes the registers x and F
+subRegisters :: W.Word8 -> W.Word8 -> Instruction
+subRegisters x y cpu =
+  pure $ Lens.over CPU.registers (V.// [(fromIntegral x, vx - vy), (0xF, borrow)]) cpu
+  where vx = CPU.regVal x cpu
+        vy = CPU.regVal y cpu
+        borrow = if vx < vy then 0 else 1
+
+-- |
+-- Opcode 0x8x_6
+-- Shifts register x right by 1 and sets register F to the value
+-- of the LSB of reg x before the shift
+-- changes the registers x and F
+shiftRegisterR :: W.Word8 -> Instruction
+shiftRegisterR regNum cpu =
+  pure $ Lens.over CPU.registers (V.// [(fromIntegral regNum, shiftR 1 $ fromIntegral vx), (0XF, lsb)]) cpu
+  where vx  = CPU.regVal regNum cpu
+        lsb = vx .&. 0x000F
+
+
+-- |
+-- Sets the register x to (x `op` y)
+-- changes the register x
+binOpRegisters :: (W.Word8 -> W.Word8 -> W.Word8) -> W.Word8 -> W.Word8 -> Instruction
+binOpRegisters op x y cpu =
+  setRegister x (CPU.regVal x cpu `op` CPU.regVal y cpu) cpu
 
 
