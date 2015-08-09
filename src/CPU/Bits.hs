@@ -11,8 +11,16 @@ import Data.Char (toUpper)
 
 -- |
 -- combining 2 Word8 to Word16
-merge :: Word8 -> Word8 -> Word16
-merge high low = shift (fromIntegral high) 8 .|. fromIntegral low
+merge16 :: Word8 -> Word8 -> Word16
+merge16 high low = shift (fromIntegral high) 8 .|. fromIntegral low
+
+-- |
+-- combining 2 Word8 to Word8
+merge8 :: Word8 -> Word8 -> Word8
+merge8 high low = shift (fromIntegral (word8to4 high)) 4 .|. fromIntegral (word8to4 low)
+
+word8to4 :: Word8 -> Word8
+word8to4 = (.&.) 0xF
 
 -- |
 -- Formatting Word16 for debugging purposes
@@ -29,3 +37,11 @@ match16 n =
   ,fromIntegral $ rotateR (n .&. 0x00F0) 4
   ,fromIntegral (n .&. 0x000F)
   )
+
+bcd8 :: Word8 -> (Word8, Word8, Word8)
+bcd8 n =
+  case map (read . (:[])) (show n) of
+    [z]     -> (0,0,z)
+    [y,z]   -> (0,y,z)
+    [x,y,z] -> (x,y,z)
+    _ -> error $ "Impossible pattern match for: " ++ show n

@@ -14,10 +14,10 @@ import qualified Lens.Micro.Mtl as Lens (view)
 data CPU = CPU { _opcode       :: W.Word16
                , _index        :: W.Word16
                , _pc           :: W.Word16
-               , _sp           :: W.Word8
+               , _sp           :: W.Word16
                , _delayTimer   :: W.Word8
                , _soundTimer   :: W.Word8
-               , _stack        :: V.Vector W.Word8
+               , _stack        :: V.Vector W.Word16
                , _registers    :: V.Vector W.Word8
                , _keypad       :: V.Vector W.Word8
                , _memory       :: V.Vector W.Word8

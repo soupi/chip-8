@@ -33,6 +33,8 @@ splitBy v vs = map reverse $ go [] vs
           | y == v    = xs : go [] ys
           | otherwise = go (y:xs) ys
 
+supplyBoth :: (a -> b -> c) -> (b -> a) -> b -> c
+supplyBoth = (=<<)
 
 ----------------
 -- Formatting
