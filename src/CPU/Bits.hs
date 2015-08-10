@@ -24,8 +24,16 @@ word8to4 = (.&.) 0xF
 
 -- |
 -- Formatting Word16 for debugging purposes
-showHex :: Word16 -> String
-showHex = ("0x"++) . map toUpper . flip Nume.showHex ""
+showHex16 :: Word16 -> String
+showHex16 = ("0x"++) . (\f (w,x,y,z) -> f w ++ f x ++ f y ++ f z) (map toUpper . flip Nume.showHex "") . match16
+
+-- |
+-- Formatting Word8 for debugging purposes
+showHex8 :: Word8 -> String
+showHex8 n =
+  "0x" ++
+  (\f (x,y) -> f x ++ f y) (map toUpper . flip Nume.showHex "")
+  (rotateR (n .&. 0xF0) 4, n .&. 0x0F)
 
 -- |
 -- a helper function for bit pattern matching

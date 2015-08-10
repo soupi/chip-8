@@ -57,3 +57,20 @@ getSP = fromIntegral . Lens.view sp
 regVal :: W.Word8 -> CPU -> W.Word8
 regVal regNum cpu =
   Lens.view registers cpu V.! fromIntegral regNum
+
+------------
+-- Errors
+------------
+
+type Error = (Maybe CPU, String)
+
+-- |
+-- utility to throw an error
+throwErr :: CPU -> String -> Either Error a
+throwErr model err = Left (Just model, err)
+
+-- |
+-- utility to throw only textual error
+throwErrText :: String -> Either Error a
+throwErrText = Left . (,) Nothing
+

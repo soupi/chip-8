@@ -15,10 +15,12 @@ import qualified Lens.Micro     as Lens
 import qualified Lens.Micro.Mtl as Lens
 import qualified Data.ByteString as BS
 
-import Utils (Error, throwErr, supplyBoth)
-import CPU.CPU (CPU)
+import Utils (supplyBoth)
+import CPU.CPU (CPU, Error, throwErr, throwErrText)
 import qualified CPU.CPU as CPU
 import qualified CPU.Bits as Bits
+
+import Debug.Trace
 
 ---------------
 -- Emulation
@@ -28,9 +30,10 @@ loadGame :: BS.ByteString -> Emulate CPU
 loadGame game =
   if BS.length game <= V.length (Lens.view CPU.memory cpu) - 0x0200
   then
-    pure $ Lens.over CPU.memory (`V.update` V.fromList (zip [0x200..] (BS.unpack game))) cpu
+    pure $ cpu & Lens.set  CPU.pc 0x200
+               & Lens.over CPU.memory (`V.update` V.fromList (zip [0x200..] (BS.unpack game)))
   else
-    throwErr "Cannot fit game in memory"
+    throwErrText "Cannot fit game in memory"
   where cpu = CPU.initCPU
 
 type Emulate a = Either Error a
@@ -46,7 +49,7 @@ fetch cpu =
     Just instruction ->
       pure instruction
     Nothing ->
-      throwErr "Program counter out of bounds"
+      throwErr cpu "Program counter out of bounds"
 
   where cmd = Bits.merge16 <$> (Lens.view CPU.memory cpu V.!? CPU.getPC cpu) <*> (Lens.view CPU.memory cpu V.!? (CPU.getPC cpu + 1))
 
@@ -56,7 +59,7 @@ decode cmd =
     Just instruction ->
       pure instruction
     Nothing ->
-      throwErr $ "Opcode: " ++ Bits.showHex cmd ++ " not implemented."
+      throwErrText $ "Opcode: " ++ Bits.showHex16 cmd ++ " not implemented."
 
 
 execute :: a -> (a -> b) -> b
@@ -83,7 +86,7 @@ nextPC cpu =
 storeOnStack :: W.Word16 -> CPU -> Emulate CPU
 storeOnStack val cpu =
   if CPU.getSP cpu >= V.length (Lens.view CPU.stack cpu)
-  then throwErr "The stack is full"
+  then throwErr cpu "The stack is full"
   else pure $
     cpu & Lens.over CPU.stack (V.// [(CPU.getSP cpu, val)])
         & Lens.over CPU.sp (+1)
@@ -95,7 +98,7 @@ popFromStack :: CPU -> Emulate (W.Word16, CPU)
 popFromStack cpu =
   if CPU.getSP cpu <= 0 && CPU.getSP cpu >= V.length (Lens.view CPU.stack cpu)
   then
-    throwErr "The stack is full"
+    throwErr cpu "The stack is full"
   else
     pure (Lens.view CPU.stack cpu V.! CPU.getSP cpu, Lens.over CPU.sp (\x -> x-1) cpu)
 
@@ -108,6 +111,7 @@ popFromStack cpu =
 -- finds the relevant instruction from opcode
 findOpcode :: W.Word16 -> Maybe Instruction
 findOpcode opcode =
+  trace (Bits.showHex16 opcode) $
   case Bits.match16 opcode of
     (0x0, 0x0, 0xE, 0x0) ->
       pure (nextPC <=< clearScreen)

@@ -5,12 +5,6 @@ module Utils where
 
 import Data.List (group, sort)
 
-type Error = String
-
--- |
--- utility to throw an error
-throwErr :: Error -> Either Error a
-throwErr = Left
 
 -- |
 -- if Maybe b is nothing, replace it with Left a. otherwise: Right b
