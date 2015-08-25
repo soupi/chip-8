@@ -15,9 +15,18 @@ build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
 
-executable chip8
-  main-is:             Main.hs
-  other-extensions:    LambdaCase
+---
+
+tested-with: GHC==7.10
+
+extra-source-files:
+  README.md
+
+source-repository head
+  type: git
+  location: https://github.com/soupi/chip-8
+
+library
   build-depends:
     base
    ,vector
@@ -26,9 +35,70 @@ executable chip8
    ,microlens-mtl
    ,bytestring
 
-  hs-source-dirs:      src
-  default-language:    Haskell2010
+  exposed-modules:
+    CPU.CPU
+   ,CPU.Emulate
+   ,CPU.Bits
+   ,CPU.Utils
+
+  exposed:
+    True
+
+  buildable:
+    True
+
+  hs-source-dirs:
+    src
+
+  default-language:
+    Haskell2010
+
+  other-extensions:
+    LambdaCase
+
+  if impl(ghc >= 6.12.0)
+    ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
+                 -fno-warn-orphans -fno-warn-unused-do-bind
+  else
+    ghc-options: -threaded -Wall -fwarn-tabs -funbox-strict-fields -O2
+                 -fno-warn-orphans
+
+---
+
+executable chip8
+  main-is:             Main.hs
+  build-depends:
+    base
+   ,bytestring
+   ,chip8
+
+  hs-source-dirs:
+    exec-src
+  default-language:
+    Haskell2010
   ghc-options:
     -Wall -fno-warn-unused-do-bind -O2
     -threaded
 
+---
+
+Test-Suite test-chip8
+  type:
+    exitcode-stdio-1.0
+  main-is:
+    Main.hs
+  hs-source-dirs:
+    tests
+  build-depends:
+    base
+   ,HUnit
+   ,microlens-mtl
+   ,bytestring
+   ,chip8
+
+  default-language:
+    Haskell2010
+  ghc-options:
+    -Wall -fno-warn-unused-do-bind -O2
+    -threaded
+    

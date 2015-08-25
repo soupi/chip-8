@@ -1,10 +1,16 @@
 
 -- |
 -- a utility module
-module Utils where
+module CPU.Utils where
 
 import Data.List (group, sort)
 
+-- |
+-- replicate operation and chain it
+replicateMChain :: Monad m => Int -> (a -> m a) -> a -> m a
+replicateMChain n f x
+  | n <= 0 = return x
+  | otherwise = f x >>= replicateMChain (n-1) f
 
 -- |
 -- if Maybe b is nothing, replace it with Left a. otherwise: Right b

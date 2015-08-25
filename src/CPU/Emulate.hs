@@ -15,12 +15,10 @@ import qualified Lens.Micro     as Lens
 import qualified Lens.Micro.Mtl as Lens
 import qualified Data.ByteString as BS
 
-import Utils (supplyBoth)
+import CPU.Utils (supplyBoth)
 import CPU.CPU (CPU, Error, throwErr, throwErrText)
 import qualified CPU.CPU as CPU
 import qualified CPU.Bits as Bits
-
-import Debug.Trace
 
 ---------------
 -- Emulation
@@ -111,7 +109,6 @@ popFromStack cpu =
 -- finds the relevant instruction from opcode
 findOpcode :: W.Word16 -> Maybe Instruction
 findOpcode opcode =
-  trace (Bits.showHex16 opcode) $
   case Bits.match16 opcode of
     (0x0, 0x0, 0xE, 0x0) ->
       pure (nextPC <=< clearScreen)
