@@ -112,10 +112,20 @@ findOpcode opcode =
   case Bits.match16 opcode of
     (0x0, 0x0, 0xE, 0x0) ->
       pure (nextPC <=< clearScreen)
+    (0x0, 0x0, 0xE, 0xE) ->
+      Nothing -- "Returns from a subroutine." - not yet implemented
+    (0x0, _, _, _) ->
+      Nothing -- "Calls RCA 1802 program at address NNN. Not necessary for most ROMs." - not yet implemented
     (0x1, _, _, _) ->
       pure $ jump (opcode .&. 0x0FFF)
     (0x2, _, _, _) ->
       pure $ callSubroutine (opcode .&. 0x0FFF)
+    (0x3, reg, _, _) ->
+      pure $ skipInstructionIf (\_ -> reg == fromIntegral (opcode .&. 0x00FF))
+    (0x4, reg, _, _) ->
+      pure $ skipInstructionIf (\_ -> reg /= fromIntegral (opcode .&. 0x00FF))
+    (0x5, reg1, reg2, 0x0) ->
+      pure $ skipInstructionIf (\cpu -> CPU.regVal reg1 cpu == CPU.regVal reg2 cpu)
     (0x6, v, _, _) ->
       pure $ setRegister v $ fromIntegral (opcode .&. 0x00FF)
     (0x7, v, _, _) ->
@@ -138,13 +148,19 @@ findOpcode opcode =
       pure $ subRegistersBackwards x y
     (0x8, x, _, 0xE) ->
       pure $ shiftRegisterL x
+    (0x9, reg1, reg2, 0x0) ->
+      pure $ skipInstructionIf (\cpu -> CPU.regVal reg1 cpu /= CPU.regVal reg2 cpu)
     (0xA, _, _, _) ->
       pure $ setIndex (opcode .&. 0x0FFF)
     (0xB, _, _, _) ->
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
+    (0xC, reg, _, _) ->
+      Nothing -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
     (0xF, x, 0x3, 0x3) ->
       pure $ storeBinRep x
     _ -> Nothing
+
+
 
 -- |
 -- Opcode 0x00E0
@@ -168,6 +184,20 @@ jump address =
 callSubroutine :: W.Word16 -> Instruction
 callSubroutine address =
   supplyBoth storeOnStack (Lens.view CPU.pc) >=> jump address
+
+-- |
+-- Opcodes 0x3vnn, 0x4vnn, 0x5xy0, 0x9xy0
+-- Skips instruction if (test cpu) is true
+-- may change the program counter (pc)
+skipInstructionIf :: (CPU -> Bool) -> Instruction
+skipInstructionIf test cpu =
+  if
+     test cpu
+  then
+    nextPC cpu
+  else
+    pure cpu
+
 
 -- |
 -- Opcode 0xBnnn
