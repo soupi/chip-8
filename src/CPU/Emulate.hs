@@ -165,8 +165,12 @@ findOpcode opcode =
       pure $ \cpu -> pure $ Lens.set CPU.soundTimer (CPU.regVal reg cpu) cpu
     (0xF, reg, 0x1, 0xE) ->
       pure $ \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
-    (0xF, x, 0x3, 0x3) ->
-      pure $ storeBinRep x
+    (0xF, reg, 0x3, 0x3) ->
+      pure $ storeBinRep reg
+    (0xF, reg, 0x5, 0x5) ->
+      pure $ storeRegInMemory reg
+    (0xF, reg, 0x6, 0x5) ->
+      pure $ storeMemoryInReg reg
     _ -> Nothing
 
 
@@ -356,5 +360,29 @@ shiftRegister shiftType compareParam regNum cpu =
 binOpRegisters :: (W.Word8 -> W.Word8 -> W.Word8) -> W.Word8 -> W.Word8 -> Instruction
 binOpRegisters op x y cpu =
   setRegister x (CPU.regVal x cpu `op` CPU.regVal y cpu) cpu
+
+storeRegInMemory :: W.Word8 -> Instruction
+storeRegInMemory reg cpu =
+  let
+    endReg = fromIntegral reg
+    index  = fromIntegral $ Lens.view CPU.index cpu
+  in
+    pure $
+      flip (Lens.over CPU.memory) cpu $
+        (`V.update`
+          V.zip (V.enumFromN index endReg)
+                (V.slice 0 endReg (Lens.view CPU.registers cpu)))
+
+storeMemoryInReg :: W.Word8 -> Instruction
+storeMemoryInReg reg cpu =
+  let
+    endReg = fromIntegral reg
+    index  = fromIntegral $ Lens.view CPU.index cpu
+  in
+    pure $
+      flip (Lens.over CPU.registers) cpu $
+        (`V.update`
+          V.zip (V.enumFromN 0 endReg)
+                (V.slice index (index+endReg) (Lens.view CPU.memory cpu)))
 
 
