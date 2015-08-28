@@ -157,21 +157,31 @@ findOpcode opcode =
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xC, reg, _, _) ->
       Nothing -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
+    (0xD, reg1, reg2, n) ->
+      Nothing -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
+    (0xE, reg, 0x9, 0xE) ->
+      Nothing -- "Skips the next instruction if the key stored in VX is pressed." -- not yet implemented
+    (0xE, reg, 0xA, 0x1) ->
+      Nothing -- "Skips the next instruction if the key stored in VX isn't pressed." -- not yet implemented
     (0xF, reg, 0x0, 0x7) ->
       pure $ \cpu -> setRegister reg (Lens.view CPU.delayTimer cpu) cpu
+    (0xF, reg, 0xA, 0xA) ->
+      Nothing -- "A key press is awaited, and then stored in VX." -- not yet implemented
     (0xF, reg, 0x1, 0x5) ->
       pure $ \cpu -> pure $ Lens.set CPU.delayTimer (CPU.regVal reg cpu) cpu
     (0xF, reg, 0x1, 0x8) ->
       pure $ \cpu -> pure $ Lens.set CPU.soundTimer (CPU.regVal reg cpu) cpu
     (0xF, reg, 0x1, 0xE) ->
       pure $ \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
+    (0xF, reg, 0x2, 0x9) ->
+      Nothing -- "Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font." -- not yet implemented
     (0xF, reg, 0x3, 0x3) ->
       pure $ storeBinRep reg
     (0xF, reg, 0x5, 0x5) ->
       pure $ storeRegInMemory reg
     (0xF, reg, 0x6, 0x5) ->
       pure $ storeMemoryInReg reg
-    _ -> Nothing
+    _ -> Nothing -- Unrecognized opcode
 
 
 
