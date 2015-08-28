@@ -106,7 +106,8 @@ popFromStack cpu =
 -------------
 
 -- |
--- finds the relevant instruction from opcode
+-- finds the relevant instruction from opcode.
+-- Based on this: https://en.wikipedia.org/wiki/CHIP-8#Opcode_table
 findOpcode :: W.Word16 -> Maybe Instruction
 findOpcode opcode =
   case Bits.match16 opcode of
@@ -156,6 +157,14 @@ findOpcode opcode =
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xC, reg, _, _) ->
       Nothing -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
+    (0xF, reg, 0x0, 0x7) ->
+      pure $ \cpu -> setRegister reg (Lens.view CPU.delayTimer cpu) cpu
+    (0xF, reg, 0x1, 0x5) ->
+      pure $ \cpu -> pure $ Lens.set CPU.delayTimer (CPU.regVal reg cpu) cpu
+    (0xF, reg, 0x1, 0x8) ->
+      pure $ \cpu -> pure $ Lens.set CPU.soundTimer (CPU.regVal reg cpu) cpu
+    (0xF, reg, 0x1, 0xE) ->
+      pure $ \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
     (0xF, x, 0x3, 0x3) ->
       pure $ storeBinRep x
     _ -> Nothing
@@ -228,6 +237,7 @@ storeBinRep x cpu =
 setIndex :: W.Word16 -> Instruction
 setIndex address =
   pure . Lens.set CPU.index address
+
 
 -- |
 -- Opcode 0x6vnn
