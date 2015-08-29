@@ -134,7 +134,8 @@ findOpcode opcode =
     (0x0, 0x0, 0xE, 0x0) ->
       pure (nextPC <=< clearScreen)
     (0x0, 0x0, 0xE, 0xE) ->
-      Nothing -- "Returns from a subroutine." - not yet implemented
+      -- "Returns from a subroutine."
+      pure returnFromSubroutine
     (0x0, _, _, _) ->
       Nothing -- "Calls RCA 1802 program at address NNN. Not necessary for most ROMs." - not yet implemented
     (0x1, _, _, _) ->
@@ -176,7 +177,8 @@ findOpcode opcode =
     (0xB, _, _, _) ->
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xC, reg, _, _) ->
-      Nothing -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
+      -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
+      pure $ setRegister reg $ fromIntegral (opcode .&. 0x00FF) -- STAB - NO RANDOMNESS
     (0xD, reg1, reg2, times) ->
       -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
       pure $ drawSprite (fromIntegral reg1) (fromIntegral reg2) (fromIntegral times)
@@ -232,6 +234,11 @@ jump address =
 callSubroutine :: W.Word16 -> Instruction
 callSubroutine address =
   supplyBoth storeOnStack (Lens.view CPU.pc) >=> jump address
+
+returnFromSubroutine :: Instruction
+returnFromSubroutine cpu = do
+  (pc, cpu') <- popFromStack cpu
+  pure $ Lens.set CPU.pc pc cpu'
 
 -- |
 -- Opcodes 0x3vnn, 0x4vnn, 0x5xy0, 0x9xy0
@@ -405,10 +412,11 @@ storeRegInMemory reg cpu =
     index  = fromIntegral $ Lens.view CPU.index cpu
   in
     pure $
-      flip (Lens.over CPU.memory) cpu $
+      Lens.over CPU.memory
         (`V.update`
           V.zip (V.enumFromN index endReg)
                 (V.slice 0 endReg (Lens.view CPU.registers cpu)))
+        cpu
 
 -- |
 -- stores a number of memory cells under index in registers
@@ -420,17 +428,18 @@ storeMemoryInReg reg cpu =
     index  = fromIntegral $ Lens.view CPU.index cpu
   in
     pure $
-      flip (Lens.over CPU.registers) cpu $
+      Lens.over CPU.registers
         (`V.update`
           V.zip (V.enumFromN 0 endReg)
                 (V.slice index (index+endReg) (Lens.view CPU.memory cpu)))
+        cpu
 
 
 -- |
 -- tries to check regarding keypad key
 isKey :: (Bool -> Bool) -> W.Word8 -> CPU.CPU -> Emulate Bool
 isKey test reg cpu = fmap test keyVal
-  where keyVal = Lens.view CPU.keypad cpu V.!? (fromIntegral $ CPU.regVal reg cpu)
+  where keyVal = Lens.view CPU.keypad cpu V.!? fromIntegral (CPU.regVal reg cpu)
                  `withDefault` throwErr cpu "Bad keypad value in register"
 
 -- |
@@ -444,8 +453,7 @@ drawSprite x y times cpu =
   in
     pure $
       Lens.over CPU.registers (V.// [(0xF, if collision then 1 else 0)]) $
-        flip (Lens.over CPU.gfx) cpu $
-          (`V.update` sprite)
+        Lens.over CPU.gfx (`V.update` sprite) cpu
 
 arrangePixels :: Int -> Int -> Int -> Int -> CPU.CPU -> (Bool, V.Vector (Int, Bool))
 arrangePixels x y index times cpu =
@@ -476,7 +484,7 @@ indicesVector x y times =
 
 separateIndex :: Int -> V.Vector Int
 separateIndex i =
-  V.fromList $ [i..i+7]
+  V.fromList [i..i+7]
 
 byteVector :: W.Word8 -> V.Vector Bool
 byteVector byte = V.fromList (go 0x1)
