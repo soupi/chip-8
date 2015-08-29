@@ -20,9 +20,13 @@ import CPU.CPU (CPU, Error, throwErr, throwErrText)
 import qualified CPU.CPU as CPU
 import qualified CPU.Bits as Bits
 
----------------
--- Emulation
----------------
+-------------
+-- Loading
+-------------
+
+loadGameAndFonts :: BS.ByteString -> Emulate CPU
+loadGameAndFonts =
+  loadGame >=> pure . loadFonts
 
 loadGame :: BS.ByteString -> Emulate CPU
 loadGame game =
@@ -34,13 +38,20 @@ loadGame game =
     throwErrText "Cannot fit game in memory"
   where cpu = CPU.initCPU
 
+loadFonts :: CPU -> CPU
+loadFonts =
+  Lens.over CPU.memory (\mem -> (mem `V.update_` V.enumFromN 0 (V.length CPU.fontSet)) CPU.fontSet)
+
+---------------
+-- Emulation
+---------------
+
 type Emulate a = Either Error a
+type Instruction = (CPU -> Emulate CPU)
 
 withDefault :: Maybe a -> Emulate a -> Emulate a
 withDefault (Just x) _ = pure x
 withDefault _ eDefault = eDefault
-
-type Instruction = (CPU -> Emulate CPU)
 
 emulateCycle :: CPU -> Emulate CPU
 emulateCycle cpu = pure . updateTimers =<< execute cpu =<< decode =<< fetch cpu
@@ -187,7 +198,8 @@ findOpcode opcode =
     (0xF, reg, 0x1, 0xE) ->
       pure $ \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
     (0xF, reg, 0x2, 0x9) ->
-      Nothing -- "Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font." -- not yet implemented
+      -- "Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font."
+      pure $ \cpu -> pure $ Lens.set CPU.index (fromIntegral (CPU.regVal reg cpu * 5)) cpu
     (0xF, reg, 0x3, 0x3) ->
       pure $ storeBinRep reg
     (0xF, reg, 0x5, 0x5) ->
