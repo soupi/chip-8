@@ -101,4 +101,4 @@ Test-Suite test-chip8
   ghc-options:
     -Wall -fno-warn-unused-do-bind -O2
     -threaded
-    
+

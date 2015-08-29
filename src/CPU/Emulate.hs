@@ -36,6 +36,10 @@ loadGame game =
 
 type Emulate a = Either Error a
 
+withDefault :: Maybe a -> Emulate a -> Emulate a
+withDefault (Just x) _ = pure x
+withDefault _ eDefault = eDefault
+
 type Instruction = (CPU -> Emulate CPU)
 
 emulateCycle :: CPU -> Emulate CPU
@@ -49,7 +53,8 @@ fetch cpu =
     Nothing ->
       throwErr cpu "Program counter out of bounds"
 
-  where cmd = Bits.merge16 <$> (Lens.view CPU.memory cpu V.!? CPU.getPC cpu) <*> (Lens.view CPU.memory cpu V.!? (CPU.getPC cpu + 1))
+  where cmd = Bits.merge16 <$> (Lens.view CPU.memory cpu V.!? CPU.getPC cpu)
+                           <*> (Lens.view CPU.memory cpu V.!? (CPU.getPC cpu + 1))
 
 decode :: W.Word16 -> Emulate Instruction
 decode cmd =
@@ -76,7 +81,11 @@ updateTimers cpu =
 -- increases the program counter by 2
 nextPC :: CPU -> Emulate CPU
 nextPC cpu =
-  pure $ Lens.over CPU.pc (+2) cpu
+  pure $ case Lens.view CPU.waitForKey cpu of
+    Nothing ->
+      Lens.over CPU.pc (+2) cpu
+    Just _  ->
+      cpu
 
 -- |
 -- store a value on the stack, updating the stack and the stack pointer.
@@ -122,11 +131,11 @@ findOpcode opcode =
     (0x2, _, _, _) ->
       pure $ callSubroutine (opcode .&. 0x0FFF)
     (0x3, reg, _, _) ->
-      pure $ skipInstructionIf (\_ -> reg == fromIntegral (opcode .&. 0x00FF))
+      pure $ skipInstructionIf (\_ -> pure $ reg == fromIntegral (opcode .&. 0x00FF))
     (0x4, reg, _, _) ->
-      pure $ skipInstructionIf (\_ -> reg /= fromIntegral (opcode .&. 0x00FF))
+      pure $ skipInstructionIf (\_ -> pure $ reg /= fromIntegral (opcode .&. 0x00FF))
     (0x5, reg1, reg2, 0x0) ->
-      pure $ skipInstructionIf (\cpu -> CPU.regVal reg1 cpu == CPU.regVal reg2 cpu)
+      pure $ skipInstructionIf (\cpu -> pure $ CPU.regVal reg1 cpu == CPU.regVal reg2 cpu)
     (0x6, v, _, _) ->
       pure $ setRegister v $ fromIntegral (opcode .&. 0x00FF)
     (0x7, v, _, _) ->
@@ -150,23 +159,27 @@ findOpcode opcode =
     (0x8, x, _, 0xE) ->
       pure $ shiftRegisterL x
     (0x9, reg1, reg2, 0x0) ->
-      pure $ skipInstructionIf (\cpu -> CPU.regVal reg1 cpu /= CPU.regVal reg2 cpu)
+      pure $ skipInstructionIf (\cpu -> pure $ CPU.regVal reg1 cpu /= CPU.regVal reg2 cpu)
     (0xA, _, _, _) ->
       pure $ setIndex (opcode .&. 0x0FFF)
     (0xB, _, _, _) ->
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xC, reg, _, _) ->
       Nothing -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
-    (0xD, reg1, reg2, n) ->
-      Nothing -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
+    (0xD, reg1, reg2, times) ->
+      -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
+      pure $ drawSprite (fromIntegral reg1) (fromIntegral reg2) (fromIntegral times)
     (0xE, reg, 0x9, 0xE) ->
-      Nothing -- "Skips the next instruction if the key stored in VX is pressed." -- not yet implemented
+      -- "Skips the next instruction if the key stored in VX is pressed."
+      pure $ skipInstructionIf (isKey id reg)
     (0xE, reg, 0xA, 0x1) ->
-      Nothing -- "Skips the next instruction if the key stored in VX isn't pressed." -- not yet implemented
+      -- "Skips the next instruction if the key stored in VX isn't pressed."
+      pure $ skipInstructionIf (isKey not reg) -- When I/O handling is added, need to manage the case of 'Just reg'
     (0xF, reg, 0x0, 0x7) ->
       pure $ \cpu -> setRegister reg (Lens.view CPU.delayTimer cpu) cpu
     (0xF, reg, 0xA, 0xA) ->
-      Nothing -- "A key press is awaited, and then stored in VX." -- not yet implemented
+      -- "A key press is awaited, and then stored in VX."
+      pure $ pure . Lens.set CPU.waitForKey (Just reg)
     (0xF, reg, 0x1, 0x5) ->
       pure $ \cpu -> pure $ Lens.set CPU.delayTimer (CPU.regVal reg cpu) cpu
     (0xF, reg, 0x1, 0x8) ->
@@ -190,7 +203,7 @@ findOpcode opcode =
 -- Clears the screen
 clearScreen :: Instruction
 clearScreen =
-  pure . Lens.over CPU.gfx (V.map (const 0))
+  pure . Lens.over CPU.gfx (V.map (const False))
 
 -- |
 -- Opcode 0x1nnn
@@ -212,14 +225,13 @@ callSubroutine address =
 -- Opcodes 0x3vnn, 0x4vnn, 0x5xy0, 0x9xy0
 -- Skips instruction if (test cpu) is true
 -- may change the program counter (pc)
-skipInstructionIf :: (CPU -> Bool) -> Instruction
+skipInstructionIf :: (CPU -> Emulate Bool) -> Instruction
 skipInstructionIf test cpu =
-  if
-     test cpu
-  then
-    nextPC cpu
-  else
-    pure cpu
+  test cpu >>= \case
+    True ->
+      nextPC cpu
+    False ->
+      pure cpu
 
 
 -- |
@@ -371,6 +383,9 @@ binOpRegisters :: (W.Word8 -> W.Word8 -> W.Word8) -> W.Word8 -> W.Word8 -> Instr
 binOpRegisters op x y cpu =
   setRegister x (CPU.regVal x cpu `op` CPU.regVal y cpu) cpu
 
+-- |
+-- stores a number of registers in memory under index
+-- changes the memory cells index..(index + @reg)
 storeRegInMemory :: W.Word8 -> Instruction
 storeRegInMemory reg cpu =
   let
@@ -383,6 +398,9 @@ storeRegInMemory reg cpu =
           V.zip (V.enumFromN index endReg)
                 (V.slice 0 endReg (Lens.view CPU.registers cpu)))
 
+-- |
+-- stores a number of memory cells under index in registers
+-- changes the registers 0..@reg
 storeMemoryInReg :: W.Word8 -> Instruction
 storeMemoryInReg reg cpu =
   let
@@ -395,4 +413,61 @@ storeMemoryInReg reg cpu =
           V.zip (V.enumFromN 0 endReg)
                 (V.slice index (index+endReg) (Lens.view CPU.memory cpu)))
 
+
+-- |
+-- tries to check regarding keypad key
+isKey :: (Bool -> Bool) -> W.Word8 -> CPU.CPU -> Emulate Bool
+isKey test reg cpu = fmap test keyVal
+  where keyVal = Lens.view CPU.keypad cpu V.!? (fromIntegral $ CPU.regVal reg cpu)
+                 `withDefault` throwErr cpu "Bad keypad value in register"
+
+-- |
+-- Draws a sprite of size (8 * times) from memory at location (x,y)
+-- Changes gfx (and register 0xF if collision detected)
+drawSprite :: W.Word8 -> W.Word8 -> W.Word8 -> Instruction
+drawSprite x y times cpu =
+  let
+    index  = Lens.view CPU.index cpu
+    (collision, sprite) = arrangePixels (fromIntegral x) (fromIntegral y) (fromIntegral index) (fromIntegral times) cpu
+  in
+    pure $
+      Lens.over CPU.registers (V.// [(0xF, if collision then 1 else 0)]) $
+        flip (Lens.over CPU.gfx) cpu $
+          (`V.update` sprite)
+
+arrangePixels :: Int -> Int -> Int -> Int -> CPU.CPU -> (Bool, V.Vector (Int, Bool))
+arrangePixels x y index times cpu =
+  unmergePixels $
+    V.zipWith3 mergePixels
+      (indicesVector x y times)
+      (V.concatMap byteVector
+        (V.slice index (index+times) (Lens.view CPU.memory cpu)))
+      (V.backpermute
+        (Lens.view CPU.gfx cpu)
+        (indicesVector x y times))
+
+unmergePixels :: V.Vector (Int, Bool, Bool) -> (Bool, V.Vector (Int, Bool))
+unmergePixels vec =
+  (V.foldl (\acc (_, col, _) -> acc || col) False vec
+  ,V.map (\(i, _, n) -> (i, n)) vec
+  )
+
+mergePixels :: Int -> Bool -> Bool -> (Int, Bool, Bool)
+mergePixels index old new =
+  (index, old && new, new)
+
+
+indicesVector :: Int -> Int -> Int -> V.Vector Int
+indicesVector x y times =
+  V.concatMap separateIndex
+              (V.enumFromStepN (y*64 + x) 64 times)
+
+separateIndex :: Int -> V.Vector Int
+separateIndex i =
+  V.fromList $ [i..i+7]
+
+byteVector :: W.Word8 -> V.Vector Bool
+byteVector byte = V.fromList (go 0x1)
+  where go 0x80 = [0x80 == 0x80 .&. byte]
+        go n    = (n    == n    .&. byte) : go (n `shiftL` 1)
 

@@ -19,9 +19,10 @@ data CPU = CPU { _opcode       :: W.Word16
                , _soundTimer   :: W.Word8
                , _stack        :: V.Vector W.Word16
                , _registers    :: V.Vector W.Word8
-               , _keypad       :: V.Vector W.Word8
+               , _keypad       :: V.Vector Bool
                , _memory       :: V.Vector W.Word8
-               , _gfx          :: V.Vector W.Word8
+               , _gfx          :: V.Vector Bool
+               , _waitForKey   :: Maybe W.Word8
                } deriving (Read, Show, Eq)
 
 makeLenses ''CPU
@@ -37,9 +38,10 @@ initCPU = CPU { _opcode         = 0
               , _soundTimer     = 0
               , _stack          = V.replicate 16 0
               , _registers      = V.replicate 16 0
-              , _keypad         = V.replicate 16 0
+              , _keypad         = V.replicate 16 False
               , _memory         = V.replicate 4096 0
-              , _gfx            = V.replicate (64 * 32) 0
+              , _gfx            = V.replicate (64 * 32) False
+              , _waitForKey     = Nothing
               }
 
 -- |
