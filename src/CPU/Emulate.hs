@@ -8,7 +8,7 @@ module CPU.Emulate where
 
 import Control.Monad ((>=>), (<=<))
 import qualified Data.Word as W (Word8, Word16)
-import qualified Data.Vector.Unboxed as V
+import qualified Data.Vector as V
 import Data.Bits ((.&.), (.|.), xor, shiftR, shiftL)
 import Lens.Micro ((&))
 import qualified Lens.Micro     as Lens
@@ -131,17 +131,19 @@ popFromStack cpu =
 findOpcode :: W.Word16 -> Maybe Instruction
 findOpcode opcode =
   case Bits.match16 opcode of
+    (0x0, 0x0, 0x0, 0x0) ->
+      pure $ \cpu -> throwErr cpu "DUMP"
     (0x0, 0x0, 0xE, 0x0) ->
-      pure (nextPC <=< clearScreen)
+      pure $ nextPC <=< clearScreen
     (0x0, 0x0, 0xE, 0xE) ->
       -- "Returns from a subroutine."
-      pure returnFromSubroutine
+      pure $ nextPC <=< returnFromSubroutine
     (0x0, _, _, _) ->
       Nothing -- "Calls RCA 1802 program at address NNN. Not necessary for most ROMs." - not yet implemented
     (0x1, _, _, _) ->
-      pure $ jump (opcode .&. 0x0FFF)
+      pure $ nextPC <=< jump (opcode .&. 0x0FFF)
     (0x2, _, _, _) ->
-      pure $ callSubroutine (opcode .&. 0x0FFF)
+      pure $ nextPC <=< callSubroutine (opcode .&. 0x0FFF)
     (0x3, reg, _, _) ->
       pure $ skipInstructionIf (\_ -> pure $ reg == fromIntegral (opcode .&. 0x00FF))
     (0x4, reg, _, _) ->
@@ -149,39 +151,39 @@ findOpcode opcode =
     (0x5, reg1, reg2, 0x0) ->
       pure $ skipInstructionIf (\cpu -> pure $ CPU.regVal reg1 cpu == CPU.regVal reg2 cpu)
     (0x6, v, _, _) ->
-      pure $ setRegister v $ fromIntegral (opcode .&. 0x00FF)
+      pure $ nextPC <=< setRegister v (fromIntegral (opcode .&. 0x00FF))
     (0x7, v, _, _) ->
-      pure $ addToRegister v $ fromIntegral (opcode .&. 0x00FF)
+      pure $ nextPC <=< addToRegister v (fromIntegral (opcode .&. 0x00FF))
     (0x8, x, y, 0x0) ->
-      pure $ movRegister x y
+      pure $ nextPC <=< movRegister x y
     (0x8, x, y, 0x1) ->
-      pure $ orRegisters x y
+      pure $ nextPC <=< orRegisters x y
     (0x8, x, y, 0x2) ->
-      pure $ andRegisters x y
+      pure $ nextPC <=< andRegisters x y
     (0x8, x, y, 0x3) ->
-      pure $ xorRegisters x y
+      pure $ nextPC <=< xorRegisters x y
     (0x8, x, y, 0x4) ->
-      pure $ addRegisters x y
+      pure $ nextPC <=< addRegisters x y
     (0x8, x, y, 0x5) ->
-      pure $ subRegisters x y
+      pure $ nextPC <=< subRegisters x y
     (0x8, x, _, 0x6) ->
-      pure $ shiftRegisterR x
+      pure $ nextPC <=< shiftRegisterR x
     (0x8, x, y, 0x7) ->
-      pure $ subRegistersBackwards x y
+      pure $ nextPC <=< subRegistersBackwards x y
     (0x8, x, _, 0xE) ->
-      pure $ shiftRegisterL x
+      pure $ nextPC <=< shiftRegisterL x
     (0x9, reg1, reg2, 0x0) ->
       pure $ skipInstructionIf (\cpu -> pure $ CPU.regVal reg1 cpu /= CPU.regVal reg2 cpu)
     (0xA, _, _, _) ->
-      pure $ setIndex (opcode .&. 0x0FFF)
+      pure $ nextPC <=< setIndex (opcode .&. 0x0FFF)
     (0xB, _, _, _) ->
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xC, reg, _, _) ->
       -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
-      pure $ setRegister reg $ fromIntegral (opcode .&. 0x00FF) -- DUMMY - NO RANDOMNESS
+      pure $ nextPC <=< setRegister reg (fromIntegral (opcode .&. 0x00FF)) -- DUMMY - NO RANDOMNESS
     (0xD, reg1, reg2, times) ->
       -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
-      pure $ drawSprite (fromIntegral reg1) (fromIntegral reg2) (fromIntegral times)
+      pure $ nextPC <=< drawSprite (fromIntegral reg1) (fromIntegral reg2) (fromIntegral times)
     (0xE, reg, 0x9, 0xE) ->
       -- "Skips the next instruction if the key stored in VX is pressed."
       pure $ skipInstructionIf (isKey id reg)
@@ -189,25 +191,25 @@ findOpcode opcode =
       -- "Skips the next instruction if the key stored in VX isn't pressed."
       pure $ skipInstructionIf (isKey not reg) -- When I/O handling is added, need to manage the case of 'Just reg'
     (0xF, reg, 0x0, 0x7) ->
-      pure $ \cpu -> setRegister reg (Lens.view CPU.delayTimer cpu) cpu
+      pure $ nextPC <=< \cpu -> setRegister reg (Lens.view CPU.delayTimer cpu) cpu
     (0xF, reg, 0xA, 0xA) ->
       -- "A key press is awaited, and then stored in VX."
       pure $ pure . Lens.set CPU.waitForKey (Just reg)
     (0xF, reg, 0x1, 0x5) ->
-      pure $ \cpu -> pure $ Lens.set CPU.delayTimer (CPU.regVal reg cpu) cpu
+      pure $ nextPC <=< \cpu -> pure $ Lens.set CPU.delayTimer (CPU.regVal reg cpu) cpu
     (0xF, reg, 0x1, 0x8) ->
-      pure $ \cpu -> pure $ Lens.set CPU.soundTimer (CPU.regVal reg cpu) cpu
+      pure $ nextPC <=< \cpu -> pure $ Lens.set CPU.soundTimer (CPU.regVal reg cpu) cpu
     (0xF, reg, 0x1, 0xE) ->
-      pure $ \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
+      pure $ nextPC <=< \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
     (0xF, reg, 0x2, 0x9) ->
       -- "Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font."
-      pure $ \cpu -> pure $ Lens.set CPU.index (fromIntegral (CPU.regVal reg cpu * 5)) cpu
+      pure $ nextPC <=< \cpu -> pure $ Lens.set CPU.index (fromIntegral (reg * 5)) cpu
     (0xF, reg, 0x3, 0x3) ->
-      pure $ storeBinRep reg
+      pure $ nextPC <=< storeBinRep reg
     (0xF, reg, 0x5, 0x5) ->
-      pure $ storeRegInMemory reg
+      pure $ nextPC <=< storeRegInMemory reg
     (0xF, reg, 0x6, 0x5) ->
-      pure $ storeMemoryInReg reg
+      pure $ nextPC <=< storeMemoryInReg reg
     _ -> Nothing -- Unrecognized opcode
 
 
@@ -460,11 +462,11 @@ arrangePixels x y index times cpu =
   unmergePixels $
     V.zipWith3 mergePixels
       (indicesVector x y times)
-      (V.concatMap byteVector
-        (V.slice index (index+times) (Lens.view CPU.memory cpu)))
       (V.backpermute
         (Lens.view CPU.gfx cpu)
         (indicesVector x y times))
+      (V.concatMap byteVector
+        (V.slice index (index+times) (Lens.view CPU.memory cpu)))
 
 unmergePixels :: V.Vector (Int, Bool, Bool) -> (Bool, V.Vector (Int, Bool))
 unmergePixels vec =

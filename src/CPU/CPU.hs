@@ -5,7 +5,7 @@ module CPU.CPU
 where
 
 import qualified Data.Word as W (Word8,Word16)
-import qualified Data.Vector.Unboxed as V
+import qualified Data.Vector as V
 import Lens.Micro.TH (makeLenses)
 import qualified Lens.Micro.Mtl as Lens (view)
 
@@ -23,9 +23,27 @@ data CPU = CPU { _opcode       :: W.Word16
                , _memory       :: V.Vector W.Word8
                , _gfx          :: V.Vector Bool
                , _waitForKey   :: Maybe W.Word8
-               } deriving (Read, Show, Eq)
+               } deriving (Read, Eq)
 
 makeLenses ''CPU
+
+
+
+instance Show CPU where
+  show cpu = unlines $ map ($ cpu)
+    [show . _opcode
+    ,show . _index
+    ,show . _pc
+    ,show . _waitForKey
+    ,show . _delayTimer
+    ,show . _soundTimer
+    ,show . _sp
+    ,show . _stack
+    ,show . _registers
+    ,show . _keypad
+    ,show . _memory
+    ,showGfx . _gfx
+    ]
 
 -- |
 -- initializing the CPU with 0
@@ -102,4 +120,19 @@ throwErrText = Left . (,) Nothing
 showErr :: Error -> String
 showErr (Nothing,  err) = "Error: " ++ err
 showErr (Just cpu, err) = "Error: " ++ err ++ "\n" ++ show cpu
+
+
+
+showGfx :: V.Vector Bool -> String
+showGfx = unlines . chunksOf 64 . V.toList . V.map (\t -> if t then 'O' else '-')
+
+-- taken from the package split
+build :: ((a -> [a] -> [a]) -> [a] -> [a]) -> [a]
+build g = g (:) []
+
+chunksOf :: Int -> [e] -> [[e]]
+chunksOf i ls = map (take i) (build (splitter ls)) where
+    splitter :: [e] -> ([e] -> a -> a) -> a -> a
+    splitter [] _ n = n
+    splitter l c n  = l `c` splitter (drop i l) c n
 
