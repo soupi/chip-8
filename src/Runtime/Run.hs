@@ -25,20 +25,32 @@ main = do
     Left (_, err) -> putStrLn $ "Could not load game.\nError: " ++ err
     Right result  -> run result
 
+gameData1 :: BS.ByteString
+gameData1 =
+  BS.pack
+    [0x00, 0xE0 -- clear screen
+    ,0xF1, 0x29 -- set letter
+    ,0xD0, 0x05 -- draw letter
+    ,0x00, 0x00 -- DUMP
+    ,0x12, 0x00 -- jump to start
+    ]
+
 gameData :: BS.ByteString
 gameData =
   BS.pack
     [0x00, 0xE0 -- clear screen
     ,0x71, 0x04 -- reg(1) <- reg(1) + 4
     ,0xFB, 0x29 -- set letter
-    ,0xDF, 0x55 -- draw letter
+    ,0xD0, 0x15 -- draw letter
     ,0xFA, 0x29 -- set letter
-    ,0xD7, 0x55 -- draw letter
+    ,0xD5, 0x15 -- draw letter
     ,0xFD, 0x29 -- set letter
-    ,0xD0, 0x55 -- draw letter
+    ,0xDA, 0x15 -- draw letter
   --,0x00, 0x00 -- DUMP
     ,0x12, 0x00 -- jump to start
     ]
+
+
 
 run :: CPU -> IO ()
 run world =
@@ -60,7 +72,7 @@ squareSize =  8
 convertGFX :: V.Vector Bool -> V.Vector (SDL.Rectangle C.CInt)
 convertGFX gfx = V.map f $ V.filter snd $ V.indexed gfx
     where f (index, _)  = SDL.Rectangle (Linear.P $ uncurry Linear.V2 (determinePos $ fromIntegral index)) (Linear.V2 squareSize squareSize)
-          determinePos i = map2 (* squareSize) (i `div` 64, i `mod` 32)
+          determinePos i = map2 (* squareSize) (i `mod` 64, i `div` 64)
 
 drawRects :: MonadIO m => V.Vector Bool -> SDL.Renderer -> m ()
 drawRects gfx renderer = do

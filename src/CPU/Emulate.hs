@@ -40,7 +40,7 @@ loadGame game =
 
 loadFonts :: CPU -> CPU
 loadFonts =
-  Lens.over CPU.memory (\mem -> (mem `V.update_` V.enumFromN 0 (V.length CPU.fontSet)) CPU.fontSet)
+  Lens.over CPU.memory (\mem -> V.update_ mem (V.enumFromN 0 (V.length CPU.fontSet)) CPU.fontSet)
 
 ---------------
 -- Emulation
@@ -489,7 +489,7 @@ separateIndex i =
   V.fromList [i..i+7]
 
 byteVector :: W.Word8 -> V.Vector Bool
-byteVector byte = V.fromList (go 0x1)
+byteVector byte = V.fromList (reverse $ go 0x1)
   where go 0x80 = [0x80 == 0x80 .&. byte]
         go n    = (n    == n    .&. byte) : go (n `shiftL` 1)
 
