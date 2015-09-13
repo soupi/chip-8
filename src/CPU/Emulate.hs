@@ -178,7 +178,7 @@ findOpcode opcode =
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xC, reg, _, _) ->
       -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
-      pure $ setRegister reg $ fromIntegral (opcode .&. 0x00FF) -- STAB - NO RANDOMNESS
+      pure $ setRegister reg $ fromIntegral (opcode .&. 0x00FF) -- DUMMY - NO RANDOMNESS
     (0xD, reg1, reg2, times) ->
       -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
       pure $ drawSprite (fromIntegral reg1) (fromIntegral reg2) (fromIntegral times)

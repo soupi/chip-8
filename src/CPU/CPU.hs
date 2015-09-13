@@ -99,3 +99,7 @@ throwErr model err = Left (Just model, err)
 throwErrText :: String -> Either Error a
 throwErrText = Left . (,) Nothing
 
+showErr :: Error -> String
+showErr (Nothing,  err) = "Error: " ++ err
+showErr (Just cpu, err) = "Error: " ++ err ++ "\n" ++ show cpu
+

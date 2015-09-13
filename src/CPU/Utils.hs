@@ -36,6 +36,10 @@ splitBy v vs = map reverse $ go [] vs
 supplyBoth :: (a -> b -> c) -> (b -> a) -> b -> c
 supplyBoth = (=<<)
 
+mapLeft :: (a -> b) -> Either a c -> Either b c
+mapLeft f (Left  x) = Left (f x)
+mapLeft _ (Right x) = Right x
+
 ----------------
 -- Formatting
 ---------------
