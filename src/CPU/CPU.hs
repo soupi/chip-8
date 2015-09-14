@@ -8,6 +8,7 @@ import qualified Data.Word as W (Word8,Word16)
 import qualified Data.Vector as V
 import Lens.Micro.TH (makeLenses)
 import qualified Lens.Micro.Mtl as Lens (view)
+import qualified Lens.Micro     as Lens (set)
 
 -- |
 -- Modeling a CHIP-8 CPU
@@ -22,7 +23,6 @@ data CPU = CPU { _opcode       :: W.Word16
                , _keypad       :: V.Vector Bool
                , _memory       :: V.Vector W.Word8
                , _gfx          :: V.Vector Bool
-               , _waitForKey   :: Maybe W.Word8
                } deriving (Read, Eq)
 
 makeLenses ''CPU
@@ -32,9 +32,8 @@ makeLenses ''CPU
 instance Show CPU where
   show cpu = unlines $ map ($ cpu)
     [show . _opcode
-    ,show . _index
     ,show . _pc
-    ,show . _waitForKey
+    ,show . _index
     ,show . _delayTimer
     ,show . _soundTimer
     ,show . _sp
@@ -59,9 +58,10 @@ initCPU = CPU { _opcode         = 0
               , _keypad         = V.replicate 16 False
               , _memory         = V.replicate 4096 0
               , _gfx            = V.replicate (64 * 32) False
-              , _waitForKey     = Nothing
               }
 
+clearKeys :: CPU -> CPU
+clearKeys = Lens.set keypad (V.replicate 16 False)
 
 -- |
 -- fontset taken from here: http://www.multigesture.net/articles/how-to-write-an-emulator-chip-8-interpreter/

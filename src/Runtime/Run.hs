@@ -3,6 +3,7 @@
 
 module Runtime.Run (main, runGame) where
 
+import           Data.Maybe (isJust, fromJust)
 import           System.Environment (getArgs)
 import           Control.Monad.IO.Class (MonadIO)
 import qualified Data.ByteString as BS
@@ -13,6 +14,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import qualified Foreign.C.Types as C (CInt)
 import qualified Lens.Micro.Mtl as Lens
+import qualified Lens.Micro     as Lens
 
 import qualified MySDL.MySDL as MySDL
 import qualified CPU.CPU as CPU
@@ -30,7 +32,7 @@ main =
       runGame gameDataBAD
 
 runGame :: BS.ByteString -> IO ()
-runGame gameData = do
+runGame gameData =
  case loadGameAndFonts gameData of
     Left (_, err) ->
       putStrLn $ "Could not load game.\nError: " ++ err
@@ -43,8 +45,52 @@ run world =
   MySDL.withWindow "CHIP-8" (MySDL.myWindowConfig (Linear.V2 512 256)) $
     flip MySDL.withRenderer (MySDL.apploop world update . render)
 
-update :: MonadIO m => [SDL.Event] -> CPU -> m (Either (Maybe String) CPU)
-update _ = pure . mapLeft (pure . CPU.showErr) . emulateCycle
+update :: MonadIO m => [SDL.EventPayload] -> CPU -> m (Either (Maybe String) CPU)
+update events = pure . mapLeft (pure . CPU.showErr) . emulateCycle . setKeys events . CPU.clearKeys
+
+setKeys :: [SDL.EventPayload] -> CPU -> CPU
+setKeys events =
+  Lens.over CPU.keypad
+  (V.//
+    zip (getActiveKeys events) (replicate 16 True))
+
+
+getActiveKeys :: [SDL.EventPayload] -> [Int]
+getActiveKeys = map fromJust . filter isJust . map getKey
+
+getKey :: SDL.EventPayload -> Maybe Int
+getKey = \case
+  SDL.KeyboardEvent e ->
+    lookup (SDL.keysymKeycode (SDL.keyboardEventKeysym e)) keyMapping
+  _ ->
+    Nothing
+
+keyMapping :: [(SDL.Keycode,Int)]
+keyMapping =
+  zip keys [0..]
+
+keys :: [SDL.Keycode]
+keys =
+  [SDL.Keycode1
+  ,SDL.Keycode2
+  ,SDL.Keycode3
+  ,SDL.Keycode4
+  ,SDL.KeycodeQ
+  ,SDL.KeycodeW
+  ,SDL.KeycodeE
+  ,SDL.KeycodeR
+  ,SDL.KeycodeA
+  ,SDL.KeycodeS
+  ,SDL.KeycodeD
+  ,SDL.KeycodeF
+  ,SDL.KeycodeZ
+  ,SDL.KeycodeX
+  ,SDL.KeycodeC
+  ,SDL.KeycodeV
+  ]
+
+
+
 
 render :: MonadIO m => (SDL.Window, SDL.Renderer) -> CPU -> m ()
 render (_, renderer) cpu = do

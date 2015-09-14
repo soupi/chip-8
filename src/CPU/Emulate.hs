@@ -90,13 +90,9 @@ updateTimers cpu =
 
 -- |
 -- increases the program counter by 2
-nextPC :: CPU -> Emulate CPU
-nextPC cpu =
-  pure $ case Lens.view CPU.waitForKey cpu of
-    Nothing ->
-      Lens.over CPU.pc (+2) cpu
-    Just _  ->
-      cpu
+nextPC :: CPU -> CPU
+nextPC =
+  Lens.over CPU.pc (+2)
 
 -- |
 -- store a value on the stack, updating the stack and the stack pointer.
@@ -134,16 +130,16 @@ findOpcode opcode =
     (0x0, 0x0, 0x0, 0x0) ->
       pure $ \cpu -> throwErr cpu "DUMP"
     (0x0, 0x0, 0xE, 0x0) ->
-      pure $ nextPC <=< clearScreen
+      pure $ pure . nextPC <=< clearScreen
     (0x0, 0x0, 0xE, 0xE) ->
       -- "Returns from a subroutine."
-      pure $ nextPC <=< returnFromSubroutine
+      pure returnFromSubroutine
     (0x0, _, _, _) ->
       Nothing -- "Calls RCA 1802 program at address NNN. Not necessary for most ROMs." - not yet implemented
     (0x1, _, _, _) ->
-      pure $ nextPC <=< jump (opcode .&. 0x0FFF)
+      pure $ jump (opcode .&. 0x0FFF)
     (0x2, _, _, _) ->
-      pure $ nextPC <=< callSubroutine (opcode .&. 0x0FFF)
+      pure $ callSubroutine (opcode .&. 0x0FFF)
     (0x3, reg, _, _) ->
       pure $ skipInstructionIf (\_ -> pure $ reg == fromIntegral (opcode .&. 0x00FF))
     (0x4, reg, _, _) ->
@@ -151,65 +147,65 @@ findOpcode opcode =
     (0x5, reg1, reg2, 0x0) ->
       pure $ skipInstructionIf (\cpu -> pure $ CPU.regVal reg1 cpu == CPU.regVal reg2 cpu)
     (0x6, v, _, _) ->
-      pure $ nextPC <=< setRegister v (fromIntegral (opcode .&. 0x00FF))
+      pure $ pure . nextPC <=< setRegister v (fromIntegral (opcode .&. 0x00FF))
     (0x7, v, _, _) ->
-      pure $ nextPC <=< addToRegister v (fromIntegral (opcode .&. 0x00FF))
+      pure $ pure . nextPC <=< addToRegister v (fromIntegral (opcode .&. 0x00FF))
     (0x8, x, y, 0x0) ->
-      pure $ nextPC <=< movRegister x y
+      pure $ pure . nextPC <=< movRegister x y
     (0x8, x, y, 0x1) ->
-      pure $ nextPC <=< orRegisters x y
+      pure $ pure . nextPC <=< orRegisters x y
     (0x8, x, y, 0x2) ->
-      pure $ nextPC <=< andRegisters x y
+      pure $ pure . nextPC <=< andRegisters x y
     (0x8, x, y, 0x3) ->
-      pure $ nextPC <=< xorRegisters x y
+      pure $ pure . nextPC <=< xorRegisters x y
     (0x8, x, y, 0x4) ->
-      pure $ nextPC <=< addRegisters x y
+      pure $ pure . nextPC <=< addRegisters x y
     (0x8, x, y, 0x5) ->
-      pure $ nextPC <=< subRegisters x y
+      pure $ pure . nextPC <=< subRegisters x y
     (0x8, x, _, 0x6) ->
-      pure $ nextPC <=< shiftRegisterR x
+      pure $ pure . nextPC <=< shiftRegisterR x
     (0x8, x, y, 0x7) ->
-      pure $ nextPC <=< subRegistersBackwards x y
+      pure $ pure . nextPC <=< subRegistersBackwards x y
     (0x8, x, _, 0xE) ->
-      pure $ nextPC <=< shiftRegisterL x
+      pure $ pure . nextPC <=< shiftRegisterL x
     (0x9, reg1, reg2, 0x0) ->
       pure $ skipInstructionIf (\cpu -> pure $ CPU.regVal reg1 cpu /= CPU.regVal reg2 cpu)
     (0xA, _, _, _) ->
-      pure $ nextPC <=< setIndex (opcode .&. 0x0FFF)
+      pure $ pure . nextPC <=< setIndex (opcode .&. 0x0FFF)
     (0xB, _, _, _) ->
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xC, reg, _, _) ->
       -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
-      pure $ nextPC <=< setRegister reg (fromIntegral (opcode .&. 0x00FF)) -- DUMMY - NO RANDOMNESS
+      pure $ pure . nextPC <=< setRegister reg (fromIntegral (opcode .&. 0x00FF)) -- DUMMY - NO RANDOMNESS
     (0xD, reg1, reg2, times) ->
       -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
-      pure $ nextPC <=< drawSprite (fromIntegral reg1) (fromIntegral reg2) (fromIntegral times)
+      pure $ pure . nextPC <=< drawSprite (fromIntegral reg1) (fromIntegral reg2) (fromIntegral times)
     (0xE, reg, 0x9, 0xE) ->
       -- "Skips the next instruction if the key stored in VX is pressed."
       pure $ skipInstructionIf (isKey id reg)
     (0xE, reg, 0xA, 0x1) ->
       -- "Skips the next instruction if the key stored in VX isn't pressed."
-      pure $ skipInstructionIf (isKey not reg) -- When I/O handling is added, need to manage the case of 'Just reg'
+      pure $ skipInstructionIf (isKey not reg)
     (0xF, reg, 0x0, 0x7) ->
-      pure $ nextPC <=< \cpu -> setRegister reg (Lens.view CPU.delayTimer cpu) cpu
+      pure $ pure . nextPC <=< \cpu -> setRegister reg (Lens.view CPU.delayTimer cpu) cpu
     (0xF, reg, 0xA, 0xA) ->
       -- "A key press is awaited, and then stored in VX."
-      pure $ pure . Lens.set CPU.waitForKey (Just reg)
+      pure $ waitForKey reg
     (0xF, reg, 0x1, 0x5) ->
-      pure $ nextPC <=< \cpu -> pure $ Lens.set CPU.delayTimer (CPU.regVal reg cpu) cpu
+      pure $ pure . nextPC <=< \cpu -> pure $ Lens.set CPU.delayTimer (CPU.regVal reg cpu) cpu
     (0xF, reg, 0x1, 0x8) ->
-      pure $ nextPC <=< \cpu -> pure $ Lens.set CPU.soundTimer (CPU.regVal reg cpu) cpu
+      pure $ pure . nextPC <=< \cpu -> pure $ Lens.set CPU.soundTimer (CPU.regVal reg cpu) cpu
     (0xF, reg, 0x1, 0xE) ->
-      pure $ nextPC <=< \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
+      pure $ pure . nextPC <=< \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
     (0xF, reg, 0x2, 0x9) ->
       -- "Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font."
-      pure $ nextPC <=< \cpu -> pure $ Lens.set CPU.index (fromIntegral (reg * 5)) cpu
+      pure $ pure . nextPC <=< \cpu -> pure $ Lens.set CPU.index (fromIntegral (reg * 5)) cpu
     (0xF, reg, 0x3, 0x3) ->
-      pure $ nextPC <=< storeBinRep reg
+      pure $ pure . nextPC <=< storeBinRep reg
     (0xF, reg, 0x5, 0x5) ->
-      pure $ nextPC <=< storeRegInMemory reg
+      pure $ pure . nextPC <=< storeRegInMemory reg
     (0xF, reg, 0x6, 0x5) ->
-      pure $ nextPC <=< storeMemoryInReg reg
+      pure $ pure . nextPC <=< storeMemoryInReg reg
     _ -> Nothing -- Unrecognized opcode
 
 
@@ -250,9 +246,9 @@ skipInstructionIf :: (CPU -> Emulate Bool) -> Instruction
 skipInstructionIf test cpu =
   test cpu >>= \case
     True ->
-      nextPC cpu
+      pure $ nextPC $ nextPC cpu
     False ->
-      pure cpu
+      pure $ nextPC cpu
 
 
 -- |
@@ -492,4 +488,12 @@ byteVector :: W.Word8 -> V.Vector Bool
 byteVector byte = V.fromList (reverse $ go 0x1)
   where go 0x80 = [0x80 == 0x80 .&. byte]
         go n    = (n    == n    .&. byte) : go (n `shiftL` 1)
+
+waitForKey :: W.Word8 -> Instruction
+waitForKey reg cpu =
+  pure $ case True `V.elemIndex` Lens.view CPU.keypad cpu of
+    Just key ->
+      nextPC $ Lens.over CPU.registers (V.// [(fromIntegral reg, fromIntegral key)]) cpu
+    Nothing ->
+      cpu
 
