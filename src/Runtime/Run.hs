@@ -1,7 +1,9 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Runtime.Run (main) where
+module Runtime.Run (main, runGame) where
 
+import           System.Environment (getArgs)
 import           Control.Monad.IO.Class (MonadIO)
 import qualified Data.ByteString as BS
 import qualified SDL
@@ -17,40 +19,24 @@ import qualified CPU.CPU as CPU
 import           CPU.CPU   (CPU)
 import           CPU.Emulate
 import           CPU.Utils (mapLeft, map2)
+import           Examples.Programs
 
 main :: IO ()
-main = do
-  putStrLn "Hello, CHIP-8!"
-  case loadGameAndFonts gameData of
-    Left (_, err) -> putStrLn $ "Could not load game.\nError: " ++ err
-    Right result  -> run result
+main =
+  getArgs >>= \case
+    [file] ->
+      BS.readFile file >>= runGame
+    _ ->
+      runGame gameDataBAD
 
-gameData1 :: BS.ByteString
-gameData1 =
-  BS.pack
-    [0x00, 0xE0 -- clear screen
-    ,0xF1, 0x29 -- set letter
-    ,0xD0, 0x05 -- draw letter
-    ,0x00, 0x00 -- DUMP
-    ,0x12, 0x00 -- jump to start
-    ]
-
-gameData :: BS.ByteString
-gameData =
-  BS.pack
-    [0x00, 0xE0 -- clear screen
-    ,0x71, 0x04 -- reg(1) <- reg(1) + 4
-    ,0xFB, 0x29 -- set letter
-    ,0xD0, 0x15 -- draw letter
-    ,0xFA, 0x29 -- set letter
-    ,0xD5, 0x15 -- draw letter
-    ,0xFD, 0x29 -- set letter
-    ,0xDA, 0x15 -- draw letter
-  --,0x00, 0x00 -- DUMP
-    ,0x12, 0x00 -- jump to start
-    ]
-
-
+runGame :: BS.ByteString -> IO ()
+runGame gameData = do
+ case loadGameAndFonts gameData of
+    Left (_, err) ->
+      putStrLn $ "Could not load game.\nError: " ++ err
+    Right result -> do
+      putStrLn "Hello CHIP-8!"
+      run result
 
 run :: CPU -> IO ()
 run world =

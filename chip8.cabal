@@ -38,6 +38,7 @@ library
    ,linear
    ,text
    ,transformers >= 0.4.0.0 && < 0.5.0.0
+   ,optparse-applicative
 
   exposed-modules:
     CPU.CPU
@@ -46,6 +47,7 @@ library
    ,CPU.Utils
    ,MySDL.MySDL
    ,Runtime.Run
+   ,Examples.Programs
 
   exposed:
     True

@@ -13,8 +13,6 @@ import qualified Foreign.C.Types as C
 import qualified SDL
 import qualified Linear
 
-import Debug.Trace
-
 -- |Config window
 myWindowConfig :: Linear.V2 C.CInt -> SDL.WindowConfig
 myWindowConfig size = SDL.defaultWindow { SDL.windowInitialSize = size }
