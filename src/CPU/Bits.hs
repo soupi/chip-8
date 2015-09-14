@@ -4,10 +4,15 @@ module CPU.Bits where
 
 import Data.Word
 import Data.Bits
+import qualified Data.ByteString as BS
 import qualified Numeric as Nume (showHex)
 import Data.Char (toUpper)
 
 
+mergeList16 :: [Word8] -> [Word16]
+mergeList16 [] = []
+mergeList16 [x] = [merge16 x 0]
+mergeList16 (x:y:rest) = merge16 x y : mergeList16 rest
 
 -- |
 -- combining 2 Word8 to Word16
@@ -53,3 +58,7 @@ bcd8 n =
     [y,z]   -> (0,y,z)
     [x,y,z] -> (x,y,z)
     _ -> error $ "Impossible pattern match for: " ++ show n
+
+showFile :: BS.ByteString -> String
+showFile =
+  unlines . zipWith (++) (map ((++ ": ") . showHex16) (filter even [0x200..])) . map showHex16 . mergeList16 . BS.unpack

@@ -5,7 +5,7 @@ module Runtime.Run (main, runGame) where
 
 import           Data.Maybe (isJust, fromJust)
 import           System.Environment (getArgs)
-import           Control.Monad.IO.Class (MonadIO)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
 import qualified Data.ByteString as BS
 import qualified SDL
 import qualified Linear
@@ -17,6 +17,7 @@ import qualified Lens.Micro.Mtl as Lens
 import qualified Lens.Micro     as Lens
 
 import qualified MySDL.MySDL as MySDL
+import qualified CPU.Bits as Bits
 import qualified CPU.CPU as CPU
 import           CPU.CPU   (CPU)
 import           CPU.Emulate
@@ -94,9 +95,14 @@ keys =
 
 render :: MonadIO m => (SDL.Window, SDL.Renderer) -> CPU -> m ()
 render (_, renderer) cpu = do
-  MySDL.setBGColor (Linear.V4 (fromIntegral $ CPU.regVal 1 cpu) 180 230 180) renderer
+  MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
   drawRects (Lens.view CPU.gfx cpu) renderer
   SDL.present renderer
+  case fetch cpu of
+    Left _   -> pure ()
+    Right op -> do
+      liftIO $ putStr (Bits.showHex16 $ fromIntegral (CPU.getPC cpu))
+      liftIO $ putStrLn $ ": " ++ Bits.showHex16 op
 
 squareSize :: C.CInt
 squareSize =  8
@@ -108,7 +114,7 @@ convertGFX gfx = V.map f $ V.filter snd $ V.indexed gfx
 
 drawRects :: MonadIO m => V.Vector Bool -> SDL.Renderer -> m ()
 drawRects gfx renderer = do
-  SDL.rendererDrawColor renderer SDL.$= Linear.V4 0 0 0 1
+  SDL.rendererDrawColor renderer SDL.$= Linear.V4 255 255 255 255
   let newGfx = convertGFX gfx
       rects  = VS.generate (V.length newGfx) (newGfx V.!)
   SDL.drawRects renderer rects

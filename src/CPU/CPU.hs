@@ -1,14 +1,15 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module CPU.CPU
-where
+module CPU.CPU where
 
 import qualified Data.Word as W (Word8,Word16)
 import qualified Data.Vector as V
 import Lens.Micro.TH (makeLenses)
 import qualified Lens.Micro.Mtl as Lens (view)
 import qualified Lens.Micro     as Lens (set)
+
+import qualified CPU.Bits as Bits
 
 -- |
 -- Modeling a CHIP-8 CPU
@@ -31,8 +32,8 @@ makeLenses ''CPU
 
 instance Show CPU where
   show cpu = unlines $ map ($ cpu)
-    [show . _opcode
-    ,show . _pc
+    [Bits.showHex16 . _opcode
+    ,Bits.showHex16 . _pc
     ,show . _index
     ,show . _delayTimer
     ,show . _soundTimer
@@ -53,7 +54,7 @@ initCPU = CPU { _opcode         = 0
               , _sp             = 0
               , _delayTimer     = 0
               , _soundTimer     = 0
-              , _stack          = V.replicate 16 0
+              , _stack          = V.replicate 12 0
               , _registers      = V.replicate 16 0
               , _keypad         = V.replicate 16 False
               , _memory         = V.replicate 4096 0

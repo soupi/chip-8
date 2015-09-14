@@ -49,7 +49,7 @@ apploop world update render = do
     Right newWorld -> do
       render newWorld
       new_tick <- SDL.ticks
-      regulateTicks 17 tick new_tick
+      regulateTicks 0 tick new_tick
       unless (checkEvent SDL.QuitEvent events) $ apploop newWorld update render
 
 setBGColor :: MonadIO m => Linear.V4 Word8 -> SDL.Renderer -> m SDL.Renderer
