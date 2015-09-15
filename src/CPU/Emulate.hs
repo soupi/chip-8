@@ -20,6 +20,8 @@ import CPU.CPU (CPU, Error, throwErr, throwErrText)
 import qualified CPU.CPU as CPU
 import qualified CPU.Bits as Bits
 
+import Debug.Trace
+
 -------------
 -- Loading
 -------------
@@ -406,13 +408,13 @@ binOpRegisters op x y cpu =
 storeRegInMemory :: W.Word8 -> Instruction
 storeRegInMemory reg cpu =
   let
-    endReg = fromIntegral reg
+    endReg = fromIntegral reg + 1
     index  = fromIntegral $ Lens.view CPU.index cpu
   in
     pure $
       Lens.over CPU.memory
         (`V.update`
-          V.zip (V.enumFromN index endReg)
+          V.zip (V.enumFromN index (index + endReg))
                 (V.slice 0 endReg (Lens.view CPU.registers cpu)))
         cpu
 
@@ -422,14 +424,14 @@ storeRegInMemory reg cpu =
 storeMemoryInReg :: W.Word8 -> Instruction
 storeMemoryInReg reg cpu =
   let
-    endReg = fromIntegral reg
+    endReg = fromIntegral reg + 1
     index  = fromIntegral $ Lens.view CPU.index cpu
   in
     pure $
       Lens.over CPU.registers
         (`V.update`
           V.zip (V.enumFromN 0 endReg)
-                (V.slice index (index+endReg) (Lens.view CPU.memory cpu)))
+                (V.slice index endReg (Lens.view CPU.memory cpu)))
         cpu
 
 
@@ -462,7 +464,7 @@ arrangePixels x y index times cpu =
         (Lens.view CPU.gfx cpu)
         (indicesVector x y times))
       (V.concatMap byteVector
-        (V.slice index (index+times) (Lens.view CPU.memory cpu)))
+        (V.slice index times (Lens.view CPU.memory cpu)))
 
 unmergePixels :: V.Vector (Int, Bool, Bool) -> (Bool, V.Vector (Int, Bool))
 unmergePixels vec =

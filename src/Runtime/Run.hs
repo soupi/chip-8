@@ -6,6 +6,7 @@ module Runtime.Run (main, runGame) where
 import           Data.Maybe (isJust, fromJust)
 import           System.Environment (getArgs)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad          ((>=>))
 import qualified Data.ByteString as BS
 import qualified SDL
 import qualified Linear
@@ -44,7 +45,7 @@ runGame gameData =
 run :: CPU -> IO ()
 run world =
   MySDL.withWindow "CHIP-8" (MySDL.myWindowConfig (Linear.V2 512 256)) $
-    flip MySDL.withRenderer (MySDL.apploop world update . render)
+    flip MySDL.withRenderer (setBGColor >=> MySDL.apploop world update . render)
 
 update :: MonadIO m => [SDL.EventPayload] -> CPU -> m (Either (Maybe String) CPU)
 update events = pure . mapLeft (pure . CPU.showErr) . emulateCycle . setKeys events . CPU.clearKeys
@@ -91,11 +92,15 @@ keys =
   ]
 
 
+setBGColor :: MonadIO m => (SDL.Window, SDL.Renderer) -> m (SDL.Window, SDL.Renderer)
+setBGColor sdlStuff@(_, renderer) = do
+  MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
+  pure sdlStuff
 
 
 render :: MonadIO m => (SDL.Window, SDL.Renderer) -> CPU -> m ()
 render (_, renderer) cpu = do
-  MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
+--  MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
   drawRects (Lens.view CPU.gfx cpu) renderer
   SDL.present renderer
   case fetch cpu of
