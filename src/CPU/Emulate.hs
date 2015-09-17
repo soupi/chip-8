@@ -20,8 +20,6 @@ import CPU.CPU (CPU, Error, throwErr, throwErrText)
 import qualified CPU.CPU as CPU
 import qualified CPU.Bits as Bits
 
-import Debug.Trace
-
 -------------
 -- Loading
 -------------
@@ -372,8 +370,6 @@ subRegistersBackwards x y cpu =
   where vx = CPU.regVal x cpu
         vy = CPU.regVal y cpu
         borrow = if vx > vy then 0 else 1
-
-
 
 -- |
 -- Opcode 0x8x_E

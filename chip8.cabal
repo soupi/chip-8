@@ -94,15 +94,39 @@ Test-Suite test-chip8
   type:
     exitcode-stdio-1.0
   main-is:
-    Main.hs
+    Tests.hs
   hs-source-dirs:
     tests
   build-depends:
     base
-   ,HUnit
-   ,microlens-mtl
    ,bytestring
    ,chip8
+   ,tasty
+   ,tasty-hunit
+
+  default-language:
+    Haskell2010
+  ghc-options:
+    -Wall -fno-warn-unused-do-bind -O2
+    -threaded
+
+---
+
+
+executable tests
+  main-is:
+    Tests.hs
+
+  hs-source-dirs:
+    tests
+
+  build-depends:
+    base
+   ,bytestring
+   ,chip8
+   ,tasty
+   ,tasty-hunit
+
 
   default-language:
     Haskell2010

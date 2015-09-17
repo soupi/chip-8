@@ -100,7 +100,7 @@ setBGColor sdlStuff@(_, renderer) = do
 
 render :: MonadIO m => (SDL.Window, SDL.Renderer) -> CPU -> m ()
 render (_, renderer) cpu = do
---  MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
+  MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
   drawRects (Lens.view CPU.gfx cpu) renderer
   SDL.present renderer
   case fetch cpu of
