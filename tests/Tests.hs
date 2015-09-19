@@ -19,7 +19,7 @@ main = defaultMain unitTests
 unitTests :: TestTree
 unitTests =
   testGroup "Unit Tests"
-  [testCPU "jump"            jump514 3 0x202      $ CPU._pc
+  [testCPU "jump"            jump514 3 0x202        CPU._pc
   ,testCPU "call subroutine" callSub 3 (0x200, 3) $ apply2 (CPU._pc, CPU._sp)
   ]
 

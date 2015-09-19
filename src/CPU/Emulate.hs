@@ -30,7 +30,7 @@ loadGameAndFonts =
 
 loadGame :: BS.ByteString -> Emulate CPU
 loadGame game =
-  if BS.length game <= V.length (Lens.view CPU.memory cpu) - 0x0200
+  if BS.length game <= V.length (Lens.view CPU.memory cpu) - 0x200
   then
     pure $ cpu & Lens.set  CPU.pc 0x200
                & Lens.over CPU.memory (`V.update` V.fromList (zip [0x200..] (BS.unpack game)))
@@ -141,9 +141,9 @@ findOpcode opcode =
     (0x2, _, _, _) ->
       pure $ pure . nextPC >=> callSubroutine (opcode .&. 0x0FFF)
     (0x3, reg, _, _) ->
-      pure $ pure . nextPC >=> skipInstructionIf (\_ -> pure $ reg == fromIntegral (opcode .&. 0x00FF))
+      pure $ pure . nextPC >=> skipInstructionIf (\cpu -> pure $ CPU.regVal reg cpu == fromIntegral (opcode .&. 0x00FF))
     (0x4, reg, _, _) ->
-      pure $ pure . nextPC >=> skipInstructionIf (\_ -> pure $ reg /= fromIntegral (opcode .&. 0x00FF))
+      pure $ pure . nextPC >=> skipInstructionIf (\cpu -> pure $ CPU.regVal reg cpu /= fromIntegral (opcode .&. 0x00FF))
     (0x5, reg1, reg2, 0x0) ->
       pure $ pure . nextPC >=> skipInstructionIf (\cpu -> pure $ CPU.regVal reg1 cpu == CPU.regVal reg2 cpu)
     (0x6, v, _, _) ->
@@ -179,7 +179,7 @@ findOpcode opcode =
       pure $ pure . nextPC >=> setRegister reg (fromIntegral (opcode .&. 0x00FF)) -- DUMMY - NO RANDOMNESS
     (0xD, reg1, reg2, times) ->
       -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
-      pure $ pure . nextPC >=> drawSprite (fromIntegral reg1) (fromIntegral reg2) (fromIntegral times)
+      pure $ pure . nextPC >=> drawSprite reg1 reg2 (fromIntegral times)
     (0xE, reg, 0x9, 0xE) ->
       -- "Skips the next instruction if the key stored in VX is pressed."
       pure $ pure . nextPC >=> skipInstructionIf (isKey id reg)
@@ -188,7 +188,7 @@ findOpcode opcode =
       pure $ pure . nextPC >=> skipInstructionIf (isKey not reg)
     (0xF, reg, 0x0, 0x7) ->
       pure $ pure . nextPC >=> \cpu -> setRegister reg (Lens.view CPU.delayTimer cpu) cpu
-    (0xF, reg, 0xA, 0xA) ->
+    (0xF, reg, 0x0, 0xA) ->
       -- "A key press is awaited, and then stored in VX."
       pure $ waitForKey reg
     (0xF, reg, 0x1, 0x5) ->
@@ -445,7 +445,7 @@ drawSprite :: W.Word8 -> W.Word8 -> W.Word8 -> Instruction
 drawSprite x y times cpu =
   let
     index  = Lens.view CPU.index cpu
-    (collision, sprite) = arrangePixels (fromIntegral x) (fromIntegral y) (fromIntegral index) (fromIntegral times) cpu
+    (collision, sprite) = arrangePixels (fromIntegral $ CPU.regVal x cpu) (fromIntegral $ CPU.regVal y cpu) (fromIntegral index) (fromIntegral times) cpu
   in
     pure $
       Lens.over CPU.registers (V.// [(0xF, if collision then 1 else 0)]) $
