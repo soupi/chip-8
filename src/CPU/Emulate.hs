@@ -14,29 +14,32 @@ import Lens.Micro ((&))
 import qualified Lens.Micro     as Lens
 import qualified Lens.Micro.Mtl as Lens
 import qualified Data.ByteString as BS
+import qualified System.Random as Rand
 
 import CPU.Utils (supplyBoth)
 import CPU.CPU (CPU, Error, throwErr, throwErrText)
 import qualified CPU.CPU as CPU
 import qualified CPU.Bits as Bits
 
+import Debug.Trace
+
 -------------
 -- Loading
 -------------
 
-loadGameAndFonts :: BS.ByteString -> Emulate CPU
-loadGameAndFonts =
-  loadGame >=> pure . loadFonts
+loadGameAndFonts :: Rand.StdGen -> BS.ByteString -> Emulate CPU
+loadGameAndFonts rgen =
+  loadGame rgen >=> pure . loadFonts
 
-loadGame :: BS.ByteString -> Emulate CPU
-loadGame game =
+loadGame :: Rand.StdGen -> BS.ByteString -> Emulate CPU
+loadGame rgen game =
   if BS.length game <= V.length (Lens.view CPU.memory cpu) - 0x200
   then
     pure $ cpu & Lens.set  CPU.pc 0x200
                & Lens.over CPU.memory (`V.update` V.fromList (zip [0x200..] (BS.unpack game)))
   else
     throwErrText "Cannot fit game in memory"
-  where cpu = CPU.initCPU
+  where cpu = CPU.initCPU rgen
 
 loadFonts :: CPU -> CPU
 loadFonts =
@@ -176,7 +179,7 @@ findOpcode opcode =
       pure $ jumpPlusIndex (opcode .&. 0x0FFF)
     (0xC, reg, _, _) ->
       -- "Sets VX to the result of a bitwise and operation on a random number and NN." -- not yet implemented
-      pure $ pure . nextPC >=> setRegister reg (fromIntegral (opcode .&. 0x00FF)) -- DUMMY - NO RANDOMNESS
+      pure $ pure . nextPC >=> setRegWithRand (fromIntegral opcode .&. 0xFF) reg
     (0xD, reg1, reg2, times) ->
       -- "Sprites stored in memory at location in index register (I), 8bits wide. Wraps around the screen. If when drawn, clears a pixel, register VF is set to 1 otherwise it is zero. All drawing is XOR drawing (i.e. it toggles the screen pixels). Sprites are drawn starting at position VX, VY. N is the number of 8bit rows that need to be drawn. If N is greater than 1, second line continues at position VX, VY+1, and so on." -- not yet implemented
       pure $ pure . nextPC >=> drawSprite reg1 reg2 (fromIntegral times)
@@ -358,7 +361,7 @@ subRegisters x y cpu =
 -- Shifts register x right by 1 and sets register F to the value
 -- of the LSB of reg x before the shift
 shiftRegisterR :: W.Word8 -> Instruction
-shiftRegisterR = shiftRegister shiftR 0x0F
+shiftRegisterR = shiftRegister shiftR 0x1
 
 -- |
 -- Opcode 0x8xy7
@@ -376,7 +379,7 @@ subRegistersBackwards x y cpu =
 -- Shifts register x left by 1 and sets register F to the value
 -- of the MSB of reg x before the shift
 shiftRegisterL :: W.Word8 -> Instruction
-shiftRegisterL = shiftRegister shiftL 0xF0 -- MIGHT NOT BE OK
+shiftRegisterL = shiftRegister shiftL 0x80 -- MIGHT NOT BE OK
 
 
 
@@ -442,14 +445,14 @@ isKey test reg cpu = fmap test keyVal
 -- Draws a sprite of size (8 * times) from memory at location (x,y)
 -- Changes gfx (and register 0xF if collision detected)
 drawSprite :: W.Word8 -> W.Word8 -> W.Word8 -> Instruction
-drawSprite x y times cpu =
+drawSprite x y times cpu = traceShow cpu $
   let
     index  = Lens.view CPU.index cpu
     (collision, sprite) = arrangePixels (fromIntegral $ CPU.regVal x cpu) (fromIntegral $ CPU.regVal y cpu) (fromIntegral index) (fromIntegral times) cpu
   in
     pure $
       Lens.over CPU.registers (V.// [(0xF, if collision then 1 else 0)]) $
-        Lens.over CPU.gfx (`V.update` sprite) cpu
+        Lens.over CPU.gfx (`V.update` V.filter snd sprite) cpu
 
 arrangePixels :: Int -> Int -> Int -> Int -> CPU.CPU -> (Bool, V.Vector (Int, Bool))
 arrangePixels x y index times cpu =
@@ -470,13 +473,14 @@ unmergePixels vec =
 
 mergePixels :: Int -> Bool -> Bool -> (Int, Bool, Bool)
 mergePixels index old new =
-  (index, old && new, new)
+  (index, old || new, new)
 
 
 indicesVector :: Int -> Int -> Int -> V.Vector Int
-indicesVector x y times =
-  V.concatMap separateIndex
-              (V.enumFromStepN (y*64 + x) 64 times)
+indicesVector x y times = traceShow (x,y,times) $
+  V.concatMap
+    separateIndex
+    (V.enumFromStepN (y*64 + x) 64 times)
 
 separateIndex :: Int -> V.Vector Int
 separateIndex i =
@@ -494,4 +498,9 @@ waitForKey reg cpu =
       nextPC $ Lens.over CPU.registers (V.// [(fromIntegral reg, fromIntegral key)]) cpu
     Nothing ->
       cpu
+
+setRegWithRand :: W.Word8 -> W.Word8 -> Instruction
+setRegWithRand nn reg cpu =
+  setRegister reg (randNum .&. nn) $ Lens.set CPU.randSeed nextSeed cpu
+  where (randNum, nextSeed) = Rand.random $ Lens.view CPU.randSeed cpu
 

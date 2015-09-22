@@ -8,6 +8,7 @@ import qualified Data.Vector as V
 import Lens.Micro.TH (makeLenses)
 import qualified Lens.Micro.Mtl as Lens (view)
 import qualified Lens.Micro     as Lens (set)
+import qualified System.Random  as Rand
 
 import qualified CPU.Bits as Bits
 
@@ -24,7 +25,8 @@ data CPU = CPU { _opcode       :: W.Word16
                , _keypad       :: V.Vector Bool
                , _memory       :: V.Vector W.Word8
                , _gfx          :: V.Vector Bool
-               } deriving (Read, Eq)
+               , _randSeed     :: Rand.StdGen
+               } deriving (Read)
 
 makeLenses ''CPU
 
@@ -47,19 +49,21 @@ instance Show CPU where
 
 -- |
 -- initializing the CPU with 0
-initCPU :: CPU
-initCPU = CPU { _opcode         = 0
-              , _index          = 0
-              , _pc             = 0
-              , _sp             = 0
-              , _delayTimer     = 0
-              , _soundTimer     = 0
-              , _stack          = V.replicate 12 0
-              , _registers      = V.replicate 16 0
-              , _keypad         = V.replicate 16 False
-              , _memory         = V.replicate 4096 0
-              , _gfx            = V.replicate (64 * 32) False
-              }
+initCPU :: Rand.StdGen -> CPU
+initCPU rgen =
+  CPU { _opcode         = 0
+      , _index          = 0
+      , _pc             = 0
+      , _sp             = 0
+      , _delayTimer     = 0
+      , _soundTimer     = 0
+      , _stack          = V.replicate 12 0
+      , _registers      = V.replicate 16 0
+      , _keypad         = V.replicate 16 False
+      , _memory         = V.replicate 4096 0
+      , _gfx            = V.replicate (64 * 32) False
+      , _randSeed       = rgen
+      }
 
 clearKeys :: CPU -> CPU
 clearKeys = Lens.set keypad (V.replicate 16 False)

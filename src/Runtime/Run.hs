@@ -5,6 +5,7 @@ module Runtime.Run (main, runGame) where
 
 import           Data.Maybe (isJust, fromJust)
 import           System.Environment (getArgs)
+import qualified System.Random as Rand
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad          ((>=>))
 import qualified Data.ByteString as BS
@@ -19,6 +20,7 @@ import qualified Lens.Micro     as Lens
 
 import qualified MySDL.MySDL as MySDL
 import qualified CPU.Bits as Bits
+import qualified CPU.Disassembler as DA
 import qualified CPU.CPU as CPU
 import           CPU.CPU   (CPU)
 import           CPU.Emulate
@@ -35,14 +37,14 @@ main =
 
 runGame :: BS.ByteString -> IO ()
 runGame gameData =
- case loadGameAndFonts gameData of
+  case loadGameAndFonts (Rand.mkStdGen 100) gameData of
     Left (_, err) ->
       putStrLn $ "Could not load game.\nError: " ++ err
     Right result -> do
       putStrLn "Hello CHIP-8!"
-      run result
+      print =<< run result
 
-run :: CPU -> IO ()
+run :: CPU -> IO CPU
 run world =
   MySDL.withWindow "CHIP-8" (MySDL.myWindowConfig (Linear.V2 512 256)) $
     flip MySDL.withRenderer (setBGColor >=> MySDL.apploop world update . render)
@@ -107,7 +109,7 @@ render (_, renderer) cpu = do
     Left _   -> pure ()
     Right op -> do
       liftIO $ putStr (Bits.showHex16 $ fromIntegral (CPU.getPC cpu))
-      liftIO $ putStrLn $ ": " ++ Bits.showHex16 op
+      liftIO $ putStrLn $ ": " ++ DA.showOpcode op
 
 squareSize :: C.CInt
 squareSize =  8

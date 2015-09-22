@@ -29,6 +29,7 @@ source-repository head
 library
   build-depends:
     base
+   ,random
    ,vector
    ,microlens
    ,microlens-th
@@ -43,6 +44,7 @@ library
   exposed-modules:
     CPU.CPU
    ,CPU.Emulate
+   ,CPU.Disassembler
    ,CPU.Bits
    ,CPU.Utils
    ,MySDL.MySDL
@@ -100,6 +102,7 @@ Test-Suite test-chip8
   build-depends:
     base
    ,bytestring
+   ,vector
    ,chip8
    ,tasty
    ,tasty-hunit
@@ -123,6 +126,7 @@ executable tests
   build-depends:
     base
    ,bytestring
+   ,vector
    ,chip8
    ,tasty
    ,tasty-hunit
