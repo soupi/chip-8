@@ -49,7 +49,6 @@ library
    ,CPU.Utils
    ,MySDL.MySDL
    ,Runtime.Run
-   ,Examples.Programs
 
   exposed:
     True

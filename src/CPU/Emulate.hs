@@ -55,7 +55,7 @@ withDefault (Just x) _ = pure x
 withDefault _ eDefault = eDefault
 
 emulateCycle :: CPU -> Emulate CPU
-emulateCycle cpu = pure . updateTimers =<< execute cpu =<< decode cpu =<< fetch cpu
+emulateCycle cpu = execute cpu =<< decode cpu =<< fetch cpu
 
 fetch :: CPU -> Either Error W.Word16
 fetch cpu =

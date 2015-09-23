@@ -39,11 +39,12 @@ withRenderer window go = do
 
 -- |app loop: takes the current world and functions that updates the world renders it
 -- manage ticks, events and loop
-apploop :: MonadIO m => a -> ([SDL.EventPayload] -> a -> m (Either (Maybe String) a)) -> (a -> m ()) -> m a
+apploop :: MonadIO m => a -> ([SDL.EventPayload] -> (SDL.Scancode -> Bool) -> a -> m (Either (Maybe String) a)) -> (a -> m ()) -> m a
 apploop world update render = do
   tick <- SDL.ticks
   events <- collectEvents
-  update events world >>= \case
+  keyState <- SDL.getKeyboardState
+  update events keyState world >>= \case
     Left Nothing ->
       liftIO $ pure world
     Left (Just err) ->
@@ -51,7 +52,7 @@ apploop world update render = do
     Right newWorld -> do
       render newWorld
       new_tick <- SDL.ticks
-      regulateTicks 0 tick new_tick
+      regulateTicks 17 tick new_tick
       if checkEvent SDL.QuitEvent events
       then pure world
       else apploop newWorld update render

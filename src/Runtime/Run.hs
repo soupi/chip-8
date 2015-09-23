@@ -3,11 +3,10 @@
 
 module Runtime.Run (main, runGame) where
 
-import           Data.Maybe (isJust, fromJust)
 import           System.Environment (getArgs)
 import qualified System.Random as Rand
 import           Control.Monad.IO.Class (MonadIO)-- , liftIO)
-import           Control.Monad          ((>=>))
+import           Control.Monad          ((>=>), (<=<))
 import qualified Data.ByteString as BS
 import qualified SDL
 import qualified Linear
@@ -25,7 +24,6 @@ import qualified CPU.CPU as CPU
 import           CPU.CPU   (CPU)
 import           CPU.Emulate
 import           CPU.Utils (mapLeft, map2, replicateMChain)
-import           Examples.Programs
 
 main :: IO ()
 main =
@@ -33,7 +31,7 @@ main =
     [file] ->
       BS.readFile file >>= runGame
     _ ->
-      runGame gameDataBAD
+      putStrLn "Usage: chip8 <rom>"
 
 runGame :: BS.ByteString -> IO ()
 runGame gameData =
@@ -50,48 +48,35 @@ run world =
   MySDL.withWindow "CHIP-8" (MySDL.myWindowConfig (Linear.V2 512 256)) $
     flip MySDL.withRenderer (setBGColor >=> MySDL.apploop world update . render)
 
-update :: MonadIO m => [SDL.EventPayload] -> CPU -> m (Either (Maybe String) CPU)
-update events = pure . mapLeft (pure . CPU.showErr) . replicateMChain 50 emulateCycle . setKeys events . CPU.clearKeys
+update :: MonadIO m => [SDL.EventPayload] -> (SDL.Scancode -> Bool) -> CPU -> m (Either (Maybe String) CPU)
+update _ keysState = pure . mapLeft (pure . CPU.showErr) . (pure . updateTimers <=< replicateMChain 10 emulateCycle) . setKeys keysState . CPU.clearKeys
 
-setKeys :: [SDL.EventPayload] -> CPU -> CPU
-setKeys events =
+
+setKeys :: (SDL.Scancode -> Bool) -> CPU -> CPU
+setKeys isKeyPressed =
   Lens.over CPU.keypad
   (V.//
-    zip (getActiveKeys events) (replicate 16 True))
+     map (fmap isKeyPressed) keyMapping)
 
-
-getActiveKeys :: [SDL.EventPayload] -> [Int]
-getActiveKeys = map fromJust . filter isJust . map getKey
-
-getKey :: SDL.EventPayload -> Maybe Int
-getKey = \case
-  SDL.KeyboardEvent e ->
-    lookup (SDL.keysymKeycode (SDL.keyboardEventKeysym e)) keyMapping
-  _ ->
-    Nothing
-
-keyMapping :: [(SDL.Keycode,Int)]
+keyMapping :: [(Int, SDL.Scancode)]
 keyMapping =
-  zip keys [0..]
+  [(0x1, SDL.Scancode1)
+  ,(0x2, SDL.Scancode2)
+  ,(0x3, SDL.Scancode3)
+  ,(0x4, SDL.ScancodeQ)
+  ,(0x5, SDL.ScancodeW)
+  ,(0x6, SDL.ScancodeE)
+  ,(0x7, SDL.ScancodeA)
+  ,(0x8, SDL.ScancodeS)
+  ,(0x9, SDL.ScancodeD)
+  ,(0x0, SDL.ScancodeX)
 
-keys :: [SDL.Keycode]
-keys =
-  [SDL.Keycode1
-  ,SDL.Keycode2
-  ,SDL.Keycode3
-  ,SDL.Keycode4
-  ,SDL.KeycodeQ
-  ,SDL.KeycodeW
-  ,SDL.KeycodeE
-  ,SDL.KeycodeR
-  ,SDL.KeycodeA
-  ,SDL.KeycodeS
-  ,SDL.KeycodeD
-  ,SDL.KeycodeF
-  ,SDL.KeycodeZ
-  ,SDL.KeycodeX
-  ,SDL.KeycodeC
-  ,SDL.KeycodeV
+  ,(0xa, SDL.ScancodeZ)
+  ,(0xb, SDL.ScancodeC)
+  ,(0xc, SDL.Scancode4)
+  ,(0xd, SDL.ScancodeR)
+  ,(0xe, SDL.ScancodeF)
+  ,(0xf, SDL.ScancodeV)
   ]
 
 
