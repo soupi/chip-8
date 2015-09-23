@@ -21,8 +21,6 @@ import CPU.CPU (CPU, Error, throwErr, throwErrText)
 import qualified CPU.CPU as CPU
 import qualified CPU.Bits as Bits
 
-import Debug.Trace
-
 -------------
 -- Loading
 -------------
@@ -202,7 +200,7 @@ findOpcode opcode =
       pure $ pure . nextPC >=> \cpu -> setIndex (fromIntegral (CPU.regVal reg cpu) + Lens.view CPU.index cpu) cpu
     (0xF, reg, 0x2, 0x9) ->
       -- "Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font."
-      pure $ pure . nextPC >=> \cpu -> pure $ Lens.set CPU.index (fromIntegral (reg * 5)) cpu
+      pure $ pure . nextPC >=> \cpu -> pure $ Lens.set CPU.index (fromIntegral (CPU.regVal reg cpu) * 5) cpu
     (0xF, reg, 0x3, 0x3) ->
       pure $ pure . nextPC >=> storeBinRep reg
     (0xF, reg, 0x5, 0x5) ->
@@ -355,14 +353,6 @@ subRegisters x y cpu =
         vy = CPU.regVal y cpu
         borrow = if vx < vy then 0 else 1
 
-
--- |
--- Opcode 0x8x_6
--- Shifts register x right by 1 and sets register F to the value
--- of the LSB of reg x before the shift
-shiftRegisterR :: W.Word8 -> Instruction
-shiftRegisterR = shiftRegister shiftR 0x1
-
 -- |
 -- Opcode 0x8xy7
 -- Subtract the registers x from y and store in x. sets borrow in register F
@@ -374,24 +364,34 @@ subRegistersBackwards x y cpu =
         vy = CPU.regVal y cpu
         borrow = if vx > vy then 0 else 1
 
+
+-- |
+-- Opcode 0x8x_6
+-- Shifts register x right by 1 and sets register F to the value
+-- of the LSB of reg x before the shift
+shiftRegisterR :: W.Word8 -> Instruction
+shiftRegisterR = shiftRegister shiftR comp
+    where comp reg = reg .&. 0x1
+
+
 -- |
 -- Opcode 0x8x_E
 -- Shifts register x left by 1 and sets register F to the value
 -- of the MSB of reg x before the shift
 shiftRegisterL :: W.Word8 -> Instruction
-shiftRegisterL = shiftRegister shiftL 0x80 -- MIGHT NOT BE OK
-
+shiftRegisterL = shiftRegister shiftL comp
+    where comp reg = shiftR (reg .&. 0x80) 7
 
 
 -- |
 -- Shifts register x by 1 and sets register F to the value
 -- of a significant bit of reg x before the shift
 -- changes the registers x and F
-shiftRegister :: (W.Word8 -> Int -> W.Word8) -> W.Word8 -> W.Word8 -> Instruction
+shiftRegister :: (W.Word8 -> Int -> W.Word8) -> (W.Word8 -> W.Word8) -> W.Word8 -> Instruction
 shiftRegister shiftType compareParam regNum cpu =
-  pure $ Lens.over CPU.registers (V.// [(fromIntegral regNum, shiftType 1 $ fromIntegral vx), (0XF, lsb)]) cpu
-  where vx  = CPU.regVal regNum cpu
-        lsb = vx .&. compareParam
+  pure $ Lens.over CPU.registers (V.// [(fromIntegral regNum, shiftType (fromIntegral vx) 1), (0xF, sb)]) cpu
+  where vx = CPU.regVal regNum cpu
+        sb = compareParam vx
 
 
 -- |
@@ -445,14 +445,14 @@ isKey test reg cpu = fmap test keyVal
 -- Draws a sprite of size (8 * times) from memory at location (x,y)
 -- Changes gfx (and register 0xF if collision detected)
 drawSprite :: W.Word8 -> W.Word8 -> W.Word8 -> Instruction
-drawSprite x y times cpu = traceShow cpu $
+drawSprite x y times cpu =
   let
     index  = Lens.view CPU.index cpu
     (collision, sprite) = arrangePixels (fromIntegral $ CPU.regVal x cpu) (fromIntegral $ CPU.regVal y cpu) (fromIntegral index) (fromIntegral times) cpu
   in
     pure $
       Lens.over CPU.registers (V.// [(0xF, if collision then 1 else 0)]) $
-        Lens.over CPU.gfx (`V.update` V.filter snd sprite) cpu
+        Lens.over CPU.gfx (`V.update` sprite) cpu
 
 arrangePixels :: Int -> Int -> Int -> Int -> CPU.CPU -> (Bool, V.Vector (Int, Bool))
 arrangePixels x y index times cpu =
@@ -462,24 +462,24 @@ arrangePixels x y index times cpu =
       (V.backpermute
         (Lens.view CPU.gfx cpu)
         (indicesVector x y times))
-      (V.concatMap byteVector
-        (V.slice index times (Lens.view CPU.memory cpu)))
+      (V.concatMap byteVector $
+        V.slice index times (Lens.view CPU.memory cpu))
 
 unmergePixels :: V.Vector (Int, Bool, Bool) -> (Bool, V.Vector (Int, Bool))
 unmergePixels vec =
-  (V.foldl (\acc (_, col, _) -> acc || col) False vec
-  ,V.map (\(i, _, n) -> (i, n)) vec
+  (V.foldl (\acc (_, o, n) -> acc || (o && not (o `xor` n))) False vec
+  ,V.map (\(i, o, n) -> (i, o `xor` n)) vec
   )
 
 mergePixels :: Int -> Bool -> Bool -> (Int, Bool, Bool)
-mergePixels index old new =
-  (index, old || new, new)
+mergePixels = (,,)
 
 
 indicesVector :: Int -> Int -> Int -> V.Vector Int
-indicesVector x y times = traceShow (x,y,times) $
+indicesVector x y times =
+
   V.concatMap
-    separateIndex
+    (V.map (`mod` 2048) . separateIndex)
     (V.enumFromStepN (y*64 + x) 64 times)
 
 separateIndex :: Int -> V.Vector Int

@@ -68,7 +68,7 @@ showOpcode opcode =
       -- "Skips the next instruction if the key stored in VX isn't pressed."
       "SKIF/=KEY @" ++ Bits.showHex8 reg
     (0xF, reg, 0x0, 0x7) ->
-      "SET-DELAY " ++ Bits.showHex8 reg
+      "SET " ++ Bits.showHex8 reg ++ ", DT"
     (0xF, reg, 0x0, 0xA) ->
       -- "A key press is awaited, and then stored in VX."
       "WAIT " ++ Bits.showHex8 reg
@@ -82,7 +82,7 @@ showOpcode opcode =
       -- "Sets I to the location of the sprite for the character in VX. Characters 0-F (in hexadecimal) are represented by a 4x5 font."
       "SET-IX-SPRITE @" ++ Bits.showHex8 reg
     (0xF, reg, 0x3, 0x3) ->
-      "STORE-BIN-REP " ++ Bits.showHex8 reg
+      "BCD " ++ Bits.showHex8 reg
     (0xF, reg, 0x5, 0x5) ->
       "STORE-REG " ++ Bits.showHex8 reg
     (0xF, reg, 0x6, 0x5) ->

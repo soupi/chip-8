@@ -3,6 +3,7 @@
 
 module CPU.CPU where
 
+import Data.Function (on)
 import qualified Data.Word as W (Word8,Word16)
 import qualified Data.Vector as V
 import Lens.Micro.TH (makeLenses)
@@ -27,6 +28,24 @@ data CPU = CPU { _opcode       :: W.Word16
                , _gfx          :: V.Vector Bool
                , _randSeed     :: Rand.StdGen
                } deriving (Read)
+
+instance Eq CPU where
+  (==) cpu1 cpu2 =
+       test _opcode
+    && test _index
+    && test _pc
+    && test _sp
+    && test _delayTimer
+    && test _soundTimer
+    && test _stack
+    && test _registers
+    && test _keypad
+    && test _memory
+    && test _gfx
+    && test (show . _randSeed)
+
+      where test f = on (==) f cpu1 cpu2
+
 
 makeLenses ''CPU
 
