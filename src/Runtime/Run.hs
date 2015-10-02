@@ -3,9 +3,10 @@
 
 module Runtime.Run (main, runGame) where
 
-import           System.Environment (getArgs)
+import           Data.Maybe (fromMaybe)
+import qualified Data.Char as Char (toLower)
 import qualified System.Random as Rand
-import           Control.Monad.IO.Class (MonadIO)-- , liftIO)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad          ((>=>), (<=<))
 import qualified Data.ByteString as BS
 import qualified SDL
@@ -16,40 +17,132 @@ import qualified Data.Vector.Storable as VS
 import qualified Foreign.C.Types as C (CInt)
 import qualified Lens.Micro.Mtl as Lens
 import qualified Lens.Micro     as Lens
+import qualified Options.Applicative as Opt
+import Options.Applicative ((<>))
 
 import qualified MySDL.MySDL as MySDL
---import qualified CPU.Bits as Bits
---import qualified CPU.Disassembler as DA
+import qualified CPU.Bits as Bits
+import qualified CPU.Disassembler as DA
 import qualified CPU.CPU as CPU
 import           CPU.CPU   (CPU)
 import           CPU.Emulate
 import           CPU.Utils (mapLeft, map2, replicateMChain)
 
-main :: IO ()
-main =
-  getArgs >>= \case
-    [file] ->
-      BS.readFile file >>= runGame
-    _ ->
-      putStrLn "Usage: chip8 <rom>"
 
-runGame :: BS.ByteString -> IO ()
-runGame gameData =
+-----------
+-- Types --
+-----------
+
+type World = (Settings, CPU)
+
+data Settings =
+  Settings
+    { setShowInstructions :: Bool
+    , setPlaySounds       :: Bool
+    , setSpeed            :: Speed
+    }
+
+data Speed = SlowSpeed | NormalSpeed | FastSpeed
+
+defaultSettings :: Settings
+defaultSettings =
+  Settings
+    { setShowInstructions = False
+    , setPlaySounds       = False
+    , setSpeed            = NormalSpeed
+    }
+
+speed2InstPerFrame :: Speed -> Int
+speed2InstPerFrame speed =
+  case speed of
+    SlowSpeed   -> 2
+    NormalSpeed -> 10
+    FastSpeed   -> 20
+
+-------------------
+-- Option Parser --
+-------------------
+
+argsParser :: Opt.Parser (FilePath, Settings)
+argsParser =
+  (,) <$> filepathParser
+      <*> settingsParser
+
+filepathParser :: Opt.Parser FilePath
+filepathParser =
+  Opt.argument Opt.str $
+       Opt.metavar "FILE"
+    <> Opt.help "Path to the game to load"
+
+
+settingsParser :: Opt.Parser Settings
+settingsParser =
+  Settings <$>
+      Opt.switch
+        (  Opt.long  "instructions"
+        <> Opt.short 'i'
+        <> Opt.help  "Trace encountered instructions")
+
+     <*> Opt.switch
+        (  Opt.long  "no-sound"
+        <> Opt.short 'n'
+        <> Opt.help  "Run game without sound")
+
+     <*>
+       fmap (fromMaybe (setSpeed defaultSettings))
+       (Opt.optional
+        (Opt.option
+          (Opt.str >>= parseSpeed)
+          (  Opt.long "speed"
+          <> Opt.short 's'
+          <> Opt.metavar "SPEED"
+          <> Opt.help "Set emulation speed to (slow/normal/fast)")))
+
+parseSpeed :: String -> Opt.ReadM Speed
+parseSpeed str =
+  case map Char.toLower str of
+    "slow"   -> pure SlowSpeed
+    "normal" -> pure NormalSpeed
+    "fast"   -> pure FastSpeed
+    _        -> Opt.readerError $ "'" ++ str ++ "' is not a valid option"
+
+argsParserInfo :: Opt.ParserInfo (FilePath, Settings)
+argsParserInfo =
+  Opt.info (Opt.helper <*> argsParser) $
+     Opt.fullDesc
+  <> Opt.progDesc "A purely functional CHIP-8 emulator written in Haskell"
+  <> Opt.header   "HIP-8"
+
+-----------
+-- Logic --
+-----------
+
+main :: IO ()
+main = do
+  (file, settings) <- Opt.execParser argsParserInfo
+  gameContent <- BS.readFile file
+  runGame settings gameContent
+
+
+runGame :: Settings -> BS.ByteString -> IO ()
+runGame settings gameData =
   case loadGameAndFonts (Rand.mkStdGen 100) gameData of
     Left (_, err) ->
       putStrLn $ "Could not load game.\nError: " ++ err
     Right result -> do
       putStrLn "Hello CHIP-8!"
-      _ <- run result
+      _ <- run (settings, result)
       putStrLn "Goodbye."
 
-run :: CPU -> IO CPU
+run :: World -> IO World
 run world =
   MySDL.withWindow "CHIP-8" (MySDL.myWindowConfig (Linear.V2 512 256)) $
     flip MySDL.withRenderer (setBGColor >=> MySDL.apploop world update . render)
 
-update :: MonadIO m => [SDL.EventPayload] -> (SDL.Scancode -> Bool) -> CPU -> m (Either (Maybe String) CPU)
-update _ keysState = pure . mapLeft (pure . CPU.showErr) . (pure . updateTimers <=< replicateMChain 10 emulateCycle) . setKeys keysState . CPU.clearKeys
+update :: MonadIO m => [SDL.EventPayload] -> (SDL.Scancode -> Bool) -> World -> m (Either (Maybe String) World)
+update _ keysState (settings, cpu) =
+  pure . fmap ((,) settings) . mapLeft (pure . CPU.showErr) . (pure . updateTimers <=< replicateMChain times emulateCycle) . setKeys keysState . CPU.clearKeys $ cpu
+    where times = speed2InstPerFrame (setSpeed settings)
 
 
 setKeys :: (SDL.Scancode -> Bool) -> CPU -> CPU
@@ -86,16 +179,19 @@ setBGColor sdlStuff@(_, renderer) = do
   pure sdlStuff
 
 
-render :: MonadIO m => (SDL.Window, SDL.Renderer) -> CPU -> m ()
-render (_, renderer) cpu = do
+render :: MonadIO m => (SDL.Window, SDL.Renderer) -> World -> m ()
+render (_, renderer) (settings, cpu) = do
   MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
   drawRects (Lens.view CPU.gfx cpu) renderer
   SDL.present renderer
---  case fetch cpu of -- show instructions for debug purposes
---    Left _   -> pure ()
---    Right op -> do
---      liftIO $ putStr (Bits.showHex16 $ fromIntegral (CPU.getPC cpu))
---      liftIO $ putStrLn $ ": " ++ DA.showOpcode op
+  if setShowInstructions settings then
+    case fetch cpu of -- show instructions for debug purposes
+      Left _   -> pure ()
+      Right op -> do
+        liftIO $ putStr (Bits.showHex16 $ fromIntegral (CPU.getPC cpu))
+        liftIO $ putStrLn $ ": " ++ DA.showOpcode op
+  else
+    pure ()
 
 squareSize :: C.CInt
 squareSize =  8
