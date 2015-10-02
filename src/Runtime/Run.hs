@@ -7,7 +7,7 @@ import           Data.Maybe (fromMaybe)
 import qualified Data.Char as Char (toLower)
 import qualified System.Random as Rand
 import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Control.Monad          ((>=>), (<=<))
+import           Control.Monad          ((>=>), (<=<), when)
 import qualified Data.ByteString as BS
 import qualified SDL
 import qualified Linear
@@ -184,14 +184,14 @@ render (_, renderer) (settings, cpu) = do
   MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
   drawRects (Lens.view CPU.gfx cpu) renderer
   SDL.present renderer
-  if setShowInstructions settings then
+  when (Lens.view CPU.soundTimer cpu > 0) $ pure ()
+  when (setShowInstructions settings) $
     case fetch cpu of -- show instructions for debug purposes
       Left _   -> pure ()
       Right op -> do
         liftIO $ putStr (Bits.showHex16 $ fromIntegral (CPU.getPC cpu))
         liftIO $ putStrLn $ ": " ++ DA.showOpcode op
-  else
-    pure ()
+
 
 squareSize :: C.CInt
 squareSize =  8

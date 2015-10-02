@@ -21,6 +21,7 @@ myWindowConfig size = SDL.defaultWindow { SDL.windowInitialSize = size }
 withWindow :: MonadIO m => Text -> SDL.WindowConfig -> (SDL.Window -> m a) -> m a
 withWindow title winConf go = do
   SDL.initialize [SDL.InitEverything]
+
   window <- SDL.createWindow title winConf
   SDL.showWindow window
 
@@ -36,6 +37,7 @@ withRenderer :: MonadIO m => SDL.Window -> ((SDL.Window, SDL.Renderer) -> m a) -
 withRenderer window go = do
   renderer <- SDL.createRenderer window (-1) SDL.defaultRenderer
   go (window, renderer)
+
 
 -- |app loop: takes the current world and functions that updates the world renders it
 -- manage ticks, events and loop
