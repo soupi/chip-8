@@ -6,10 +6,14 @@ module Runtime.Run (main, runGame) where
 import           Data.Maybe (fromMaybe)
 import qualified Data.Char as Char (toLower)
 import qualified System.Random as Rand
+import           Control.Concurrent (forkIO)
+import           Control.Concurrent.Chan
 import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           Control.Monad          ((>=>), (<=<), when)
+import           Control.Monad          ((>=>), (<=<), when, void, forever)
 import qualified Data.ByteString as BS
+import           Data.Word (Word8)
 import qualified SDL
+import qualified Sound.Tomato.Speakers as Tomato
 import qualified Linear
 import qualified Linear.Affine as Linear
 import qualified Data.Vector as V
@@ -19,6 +23,8 @@ import qualified Lens.Micro.Mtl as Lens
 import qualified Lens.Micro     as Lens
 import qualified Options.Applicative as Opt
 import Options.Applicative ((<>))
+
+
 
 import qualified MySDL.MySDL as MySDL
 import qualified CPU.Bits as Bits
@@ -33,7 +39,7 @@ import           CPU.Utils (mapLeft, map2, replicateMChain)
 -- Types --
 -----------
 
-type World = (Settings, CPU)
+type World = (Settings, Chan Word8, CPU)
 
 data Settings =
   Settings
@@ -48,7 +54,7 @@ defaultSettings :: Settings
 defaultSettings =
   Settings
     { setShowInstructions = False
-    , setPlaySounds       = False
+    , setPlaySounds       = True
     , setSpeed            = NormalSpeed
     }
 
@@ -83,10 +89,10 @@ settingsParser =
         <> Opt.short 'i'
         <> Opt.help  "Trace encountered instructions")
 
-     <*> Opt.switch
+     <*> fmap not (Opt.switch
         (  Opt.long  "no-sound"
         <> Opt.short 'n'
-        <> Opt.help  "Run game without sound")
+        <> Opt.help  "Run game without sound"))
 
      <*>
        fmap (fromMaybe (setSpeed defaultSettings))
@@ -131,7 +137,9 @@ runGame settings gameData =
       putStrLn $ "Could not load game.\nError: " ++ err
     Right result -> do
       putStrLn "Hello CHIP-8!"
-      _ <- run (settings, result)
+      audioChan <- newChan
+      forkIO (audioHandler (setSpeed settings) audioChan)
+      _ <- run (settings, audioChan, result)
       putStrLn "Goodbye."
 
 run :: World -> IO World
@@ -140,8 +148,8 @@ run world =
     flip MySDL.withRenderer (setBGColor >=> MySDL.apploop world update . render)
 
 update :: MonadIO m => [SDL.EventPayload] -> (SDL.Scancode -> Bool) -> World -> m (Either (Maybe String) World)
-update _ keysState (settings, cpu) =
-  pure . fmap ((,) settings) . mapLeft (pure . CPU.showErr) . (pure . updateTimers <=< replicateMChain times emulateCycle) . setKeys keysState . CPU.clearKeys $ cpu
+update _ keysState (settings, audioChan, cpu) =
+  pure . fmap ((,,) settings audioChan) . mapLeft (pure . CPU.showErr) . (pure . updateTimers <=< replicateMChain times emulateCycle . cleanSoundTimer) . setKeys keysState . CPU.clearKeys $ cpu
     where times = speed2InstPerFrame (setSpeed settings)
 
 
@@ -180,11 +188,11 @@ setBGColor sdlStuff@(_, renderer) = do
 
 
 render :: MonadIO m => (SDL.Window, SDL.Renderer) -> World -> m ()
-render (_, renderer) (settings, cpu) = do
+render (_, renderer) (settings, audioChan, cpu) = do
   MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
   drawRects (Lens.view CPU.gfx cpu) renderer
   SDL.present renderer
-  when (Lens.view CPU.soundTimer cpu > 0) $ pure ()
+  when (setPlaySounds settings && Lens.view CPU.soundTimer cpu > 0) $ liftIO $ writeChan audioChan (Lens.view CPU.soundTimer cpu)
   when (setShowInstructions settings) $
     case fetch cpu of -- show instructions for debug purposes
       Left _   -> pure ()
@@ -209,3 +217,24 @@ drawRects gfx renderer = do
   SDL.drawRects renderer rects
   SDL.fillRects renderer rects
 
+
+-- taken from here: http://hackage.haskell.org/package/tomato-rubato-openal-0.1.0.4/docs/src/Sound-Tomato-Speakers.html#testSine
+beep :: Float -> IO ()
+beep duration = void $ Tomato.withSpeakers sampleRate 128 $ flip Tomato.playSamples sound
+  where
+    freq        = 1000
+    sampleRate  = 22050
+    dt          = 1 / sampleRate -- time in seconds of a single sample
+    sound       = take (ceiling $ duration / dt)
+      $ map (0.4*) sine
+
+    sine = [sin (2*pi*freq*dt*fromIntegral t) | t <- [0..] :: [Integer]]
+
+
+audioHandler :: Speed -> Chan Word8 -> IO ()
+audioHandler spd chan = forever $ do
+  duration <- readChan chan
+  beep (fromIntegral duration / speedToDivider spd)
+
+speedToDivider :: Speed -> Float
+speedToDivider = (*5) . fromIntegral . speed2InstPerFrame

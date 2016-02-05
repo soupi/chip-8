@@ -1,5 +1,7 @@
 flags: {}
 packages:
 - '.'
-extra-deps: []
+extra-deps:
+- OpenAL-1.7.0.3
+- tomato-rubato-openal-0.1.0.4
 resolver: nightly-2015-09-13

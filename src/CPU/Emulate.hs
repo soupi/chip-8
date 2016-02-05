@@ -85,6 +85,10 @@ updateTimers cpu =
   cpu & Lens.over CPU.delayTimer (\dt -> if dt > 0 then dt - 1 else 0)
       & Lens.over CPU.soundTimer (\st -> if st > 0 then st - 1 else 0)
 
+cleanSoundTimer :: CPU -> CPU
+cleanSoundTimer =
+   Lens.set CPU.soundTimer 0
+
 ----------------
 -- update CPU
 ----------------

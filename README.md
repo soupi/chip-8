@@ -1,9 +1,10 @@
-CHIP-8
-======
+HIP-8
+=====
 
-An emulator for CHIP-8 written in Haskell
-
-> **Status**: WIP
+A purely functional toy emulator for the CHIP-8 system written in Haskell
 
 ![](chip8.gif)
+
+> [Playing Pong on Youtube](https://www.youtube.com/watch?v=scmHayBvdHw)
+> [Playing Tetris on Youtube](https://www.youtube.com/watch?v=WzFXH5XzN7A)
 

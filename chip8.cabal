@@ -36,6 +36,7 @@ library
    ,microlens-mtl
    ,bytestring
    ,sdl2 >= 2.0.0 && < 3.0.0
+   ,tomato-rubato-openal
    ,linear
    ,text
    ,transformers >= 0.4.0.0 && < 0.5.0.0
