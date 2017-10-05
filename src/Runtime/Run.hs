@@ -31,7 +31,7 @@ import qualified CPU.Disassembler as DA
 import qualified CPU.CPU as CPU
 import           CPU.CPU   (CPU)
 import           CPU.Emulate
-import           CPU.Utils (mapLeft, map2, replicateMChain)
+import           CPU.Utils
 
 
 -----------
@@ -58,12 +58,12 @@ defaultSettings = Settings
   , setSpeed            = NormalSpeed
   }
 
-speed2InstPerFrame :: Speed -> Int
-speed2InstPerFrame speed =
+speedMultiplier :: Speed -> Int
+speedMultiplier speed =
   case speed of
-    SlowSpeed   -> 1
-    NormalSpeed -> 2
-    FastSpeed   -> 5
+    SlowSpeed   -> 2
+    NormalSpeed -> 6
+    FastSpeed   -> 12
 
 -------------------
 -- Option Parser --
@@ -138,26 +138,25 @@ runGame settings gameData =
     Right result -> do
       putStrLn "Hello CHIP-8!"
       audioChan <- newChan
-      forkIO (audioHandler (setSpeed settings) audioChan)
+      forkIO (audioHandler audioChan)
       _ <- run (settings, audioChan, result)
       putStrLn "Goodbye."
 
 run :: World -> IO World
 run world =
   MySDL.withWindow "CHIP-8" (MySDL.myWindowConfig (Linear.V2 512 256)) $
-    flip MySDL.withRenderer (setBGColor >=> MySDL.apploop world update . render)
+    flip MySDL.withRenderer (setBGColor >=> MySDL.apploop 30 world update . render)
 
 update :: [SDL.EventPayload] -> (SDL.Scancode -> Bool) -> World -> IO (Either (Maybe String) World)
 update _ keysState (settings, audioChan, cpu) =
   pure
   . fmap ((,,) settings audioChan)
   . mapLeft (pure . CPU.showErr)
-  . (pure . updateTimers <=< replicateMChain times emulateCycle . cleanSoundTimer)
+  . (pure . updateTimers <=< replicateMChain emulationSpeed emulateCycle . cleanSoundTimer)
   . setKeys keysState
   . CPU.clearKeys
   $ cpu
-    where times = speed2InstPerFrame (setSpeed settings)
-
+  where emulationSpeed = speedMultiplier (setSpeed settings)
 
 setKeys :: (SDL.Scancode -> Bool) -> CPU -> CPU
 setKeys isKeyPressed =
@@ -232,17 +231,14 @@ beep duration = void $ Tomato.withSpeakers sampleRate 128 $ flip Tomato.playSamp
     freq        = 1000
     sampleRate  = 22050
     dt          = 1 / sampleRate -- time in seconds of a single sample
-    sound       = take (ceiling $ duration / dt)
+    sound       = take (ceiling $ duration * sampleRate)
       $ map (0.4*) sine
 
     sine = [sin (2*pi*freq*dt*fromIntegral t) | t <- [0..] :: [Integer]]
 
 
-audioHandler :: Speed -> Chan Word8 -> IO ()
-audioHandler spd chan = forever $ do
+audioHandler :: Chan Word8 -> IO ()
+audioHandler chan = forever $ do
   duration <- readChan chan
-  beep (fromIntegral duration / speedToDivider spd)
-
-speedToDivider :: Speed -> Float
-speedToDivider = (*10) . fromIntegral . speed2InstPerFrame
+  beep $ (fromIntegral duration / 30)
 

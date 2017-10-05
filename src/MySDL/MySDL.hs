@@ -40,8 +40,8 @@ withRenderer window go = do
 
 -- |app loop: takes the current world and functions that updates the world renders it
 -- manage ticks, events and loop
-apploop :: a -> ([SDL.EventPayload] -> (SDL.Scancode -> Bool) -> a -> IO (Either (Maybe String) a)) -> (a -> IO ()) -> IO a
-apploop world update render = do
+apploop :: Int -> a -> ([SDL.EventPayload] -> (SDL.Scancode -> Bool) -> a -> IO (Either (Maybe String) a)) -> (a -> IO ()) -> IO a
+apploop ticksPerSec world update render = do
   tick <- SDL.ticks
   events <- collectEvents
   keyState <- SDL.getKeyboardState
@@ -53,10 +53,10 @@ apploop world update render = do
     Right newWorld -> do
       render newWorld
       new_tick <- SDL.ticks
-      regulateTicks 17 tick new_tick
+      regulateTicks ticksPerSec tick new_tick
       if checkEvent SDL.QuitEvent events
       then pure world
-      else apploop newWorld update render
+      else apploop ticksPerSec newWorld update render
 
 setBGColor :: Linear.V4 Word8 -> SDL.Renderer -> IO SDL.Renderer
 setBGColor color renderer = do
@@ -79,7 +79,9 @@ checkEvent :: SDL.EventPayload -> [SDL.EventPayload] -> Bool
 checkEvent = elem
 
 -- |will delay until ticks pass
-regulateTicks :: Word.Word32 -> Word.Word32 -> Word.Word32 -> IO ()
-regulateTicks ticks tick new_tick =
-  when (ticks - (new_tick - tick) < ticks && (ticks - (new_tick - tick)) > 0) $
+regulateTicks :: Int -> Word.Word32 -> Word.Word32 -> IO ()
+regulateTicks ticksPerSec tick new_tick =
+  let
+    ticks = ceiling ((1 / fromIntegral ticksPerSec) * 1000 :: Float)
+  in when (ticks - (new_tick - tick) < ticks && (ticks - (new_tick - tick)) > 0) $
     SDL.delay $ ticks - (new_tick - tick)
