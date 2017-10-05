@@ -4,11 +4,11 @@
 module Runtime.Run (main, runGame) where
 
 import           Data.Maybe (fromMaybe)
+import           Data.Monoid
 import qualified Data.Char as Char (toLower)
 import qualified System.Random as Rand
 import           Control.Concurrent (forkIO)
 import           Control.Concurrent.Chan
-import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad          ((>=>), (<=<), when, void, forever)
 import qualified Data.ByteString as BS
 import           Data.Word (Word8)
@@ -22,7 +22,6 @@ import qualified Foreign.C.Types as C (CInt)
 import qualified Lens.Micro.Mtl as Lens
 import qualified Lens.Micro     as Lens
 import qualified Options.Applicative as Opt
-import Options.Applicative ((<>))
 
 
 
@@ -41,29 +40,30 @@ import           CPU.Utils (mapLeft, map2, replicateMChain)
 
 type World = (Settings, Chan Word8, CPU)
 
-data Settings =
-  Settings
-    { setShowInstructions :: Bool
-    , setPlaySounds       :: Bool
-    , setSpeed            :: Speed
-    }
+data Settings = Settings
+  { setShowInstructions :: Bool
+  , setPlaySounds       :: Bool
+  , setSpeed            :: Speed
+  }
 
-data Speed = SlowSpeed | NormalSpeed | FastSpeed
+data Speed
+  = SlowSpeed
+  | NormalSpeed
+  | FastSpeed
 
 defaultSettings :: Settings
-defaultSettings =
-  Settings
-    { setShowInstructions = False
-    , setPlaySounds       = True
-    , setSpeed            = NormalSpeed
-    }
+defaultSettings = Settings
+  { setShowInstructions = False
+  , setPlaySounds       = True
+  , setSpeed            = NormalSpeed
+  }
 
 speed2InstPerFrame :: Speed -> Int
 speed2InstPerFrame speed =
   case speed of
-    SlowSpeed   -> 2
-    NormalSpeed -> 10
-    FastSpeed   -> 20
+    SlowSpeed   -> 1
+    NormalSpeed -> 2
+    FastSpeed   -> 5
 
 -------------------
 -- Option Parser --
@@ -147,9 +147,15 @@ run world =
   MySDL.withWindow "CHIP-8" (MySDL.myWindowConfig (Linear.V2 512 256)) $
     flip MySDL.withRenderer (setBGColor >=> MySDL.apploop world update . render)
 
-update :: MonadIO m => [SDL.EventPayload] -> (SDL.Scancode -> Bool) -> World -> m (Either (Maybe String) World)
+update :: [SDL.EventPayload] -> (SDL.Scancode -> Bool) -> World -> IO (Either (Maybe String) World)
 update _ keysState (settings, audioChan, cpu) =
-  pure . fmap ((,,) settings audioChan) . mapLeft (pure . CPU.showErr) . (pure . updateTimers <=< replicateMChain times emulateCycle . cleanSoundTimer) . setKeys keysState . CPU.clearKeys $ cpu
+  pure
+  . fmap ((,,) settings audioChan)
+  . mapLeft (pure . CPU.showErr)
+  . (pure . updateTimers <=< replicateMChain times emulateCycle . cleanSoundTimer)
+  . setKeys keysState
+  . CPU.clearKeys
+  $ cpu
     where times = speed2InstPerFrame (setSpeed settings)
 
 
@@ -181,24 +187,25 @@ keyMapping =
   ]
 
 
-setBGColor :: MonadIO m => (SDL.Window, SDL.Renderer) -> m (SDL.Window, SDL.Renderer)
+setBGColor :: (SDL.Window, SDL.Renderer) -> IO (SDL.Window, SDL.Renderer)
 setBGColor sdlStuff@(_, renderer) = do
   MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
   pure sdlStuff
 
 
-render :: MonadIO m => (SDL.Window, SDL.Renderer) -> World -> m ()
+render :: (SDL.Window, SDL.Renderer) -> World -> IO ()
 render (_, renderer) (settings, audioChan, cpu) = do
   MySDL.setBGColor (Linear.V4 0 0 0 255) renderer
   drawRects (Lens.view CPU.gfx cpu) renderer
   SDL.present renderer
-  when (setPlaySounds settings && Lens.view CPU.soundTimer cpu > 0) $ liftIO $ writeChan audioChan (Lens.view CPU.soundTimer cpu)
+  when (setPlaySounds settings && Lens.view CPU.soundTimer cpu > 0) $
+    writeChan audioChan (Lens.view CPU.soundTimer cpu)
   when (setShowInstructions settings) $
     case fetch cpu of -- show instructions for debug purposes
       Left _   -> pure ()
       Right op -> do
-        liftIO $ putStr (Bits.showHex16 $ fromIntegral (CPU.getPC cpu))
-        liftIO $ putStrLn $ ": " ++ DA.showOpcode op
+        putStr (Bits.showHex16 $ fromIntegral (CPU.getPC cpu))
+        putStrLn $ ": " ++ DA.showOpcode op
 
 
 squareSize :: C.CInt
@@ -209,7 +216,7 @@ convertGFX gfx = V.map f $ V.filter snd $ V.indexed gfx
     where f (index, _)  = SDL.Rectangle (Linear.P $ uncurry Linear.V2 (determinePos $ fromIntegral index)) (Linear.V2 squareSize squareSize)
           determinePos i = map2 (* squareSize) (i `mod` 64, i `div` 64)
 
-drawRects :: MonadIO m => V.Vector Bool -> SDL.Renderer -> m ()
+drawRects :: V.Vector Bool -> SDL.Renderer -> IO ()
 drawRects gfx renderer = do
   SDL.rendererDrawColor renderer SDL.$= Linear.V4 255 255 255 255
   let newGfx = convertGFX gfx
@@ -237,4 +244,5 @@ audioHandler spd chan = forever $ do
   beep (fromIntegral duration / speedToDivider spd)
 
 speedToDivider :: Speed -> Float
-speedToDivider = (*5) . fromIntegral . speed2InstPerFrame
+speedToDivider = (*10) . fromIntegral . speed2InstPerFrame
+
